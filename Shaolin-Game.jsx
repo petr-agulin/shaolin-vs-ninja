@@ -67,9 +67,11 @@ const PALETTE = {
 };
 
 // Road geometry — wider than tiles so tiles sit *inside* a clearly-visible road.
-const ROAD_OUTER = TILE + 36;
-const ROAD_INNER = TILE + 24;
-const ROAD_LIGHT = TILE + 12;
+// Extra width ensures rounded corners (linejoin="round", radius = strokeWidth/2)
+// have at least ~12 px clearance from tile corners (tile half-diagonal ≈ 49.5 px).
+const ROAD_OUTER = TILE + 54;   // radius 62 — corner clearance ≈ 12.5 px
+const ROAD_INNER = TILE + 42;   // 6 px dark border each side
+const ROAD_LIGHT = TILE + 30;   // 6 px road inner band each side
 
 // ---- LAYOUT HELPERS ---------------------------------------------------------
 function tileGridPos(n) {
@@ -155,59 +157,83 @@ function placeFights(tiles) {
 }
 
 function placeHoles(tiles) {
-  // 3 holes; origin in 6..50. No two within 3 tiles of each other.
-  // Destination is the COLUMN-ALIGNED tile 1 or 2 rows below the origin
-  // (same logic as ladders, with extra freedom over the level). Destination
-  // must be NORMAL at this point — only fights are placed before holes — and
-  // we reserve the destination so traps/ladders/items cannot overwrite it.
-  // Trap-distance constraint enforced later when placing traps.
+  // 3 holes total. Distribution: exactly two with fallRows=1 and exactly
+  // one with fallRows=2.
+  //
+  // Origin restrictions:
+  //   - Origin must be in tiles 6..56 (no holes in 1..5 or 57..64).
+  //   - Tile 49 is forbidden — its 1-row fall lands on the boss tile 64.
+  //   - Tiles 50..56 sit on row 6 and are only allowed as 1-row holes
+  //     (a 2-row fall from row 6 would overshoot onto the boss).
+  //   - No hole's destination may be the boss tile 64.
+  //
+  // Spacing:
+  //   - No two hole origins on adjacent tiles.
+  //   - A hole's origin may not coincide with another hole's destination
+  //     (and vice versa) — no chained falls.
+  //
+  // Other:
+  //   - Destination tile must currently be NORMAL (no fights placed there).
+  //   - At least one normal/item tile must lie between origin and dest.
+  //   - Trap-distance constraint is enforced later in placeTraps.
   const eligible = [];
-  for (let i = 6; i <= 50; i++) {
+  for (let i = 6; i <= 56; i++) {
+    if (i === 49) continue;
     if (tiles[i].type === T.NORMAL) eligible.push(i);
   }
 
   const placed = []; // { origin, dest, fallRows }
   const reserved = new Set();
 
-  for (const origin of shuffle(eligible)) {
-    if (placed.length >= 3) break;
-    let spaced = true;
-    for (const p of placed) {
-      if (Math.abs(p.origin - origin) < 3) { spaced = false; break; }
-    }
-    if (!spaced) continue;
-
+  function pickFor(origin, allowedFalls) {
     const { row: rOrig, col } = tileGridPos(origin);
-    let chosen = null;
-    for (const fallRows of shuffle([1, 2])) {
+    for (const fallRows of allowedFalls) {
       const targetRow = rOrig + fallRows;
-      let dest;
-      if (targetRow >= ROWS) {
-        dest = 64; // overshoot → boss
-      } else {
-        dest = gridPosToTile(targetRow, col);
-        if (dest === null) continue;
-      }
-      if (dest !== 64) {
-        if (dest <= origin) continue;
-        if (tiles[dest].type !== T.NORMAL) continue;
-        if (reserved.has(dest)) continue;
-      }
-      // Spec: ≥1 item-or-normal between origin and dest. At this point only
-      // fights are placed, so any current normal tile counts.
+      if (targetRow >= ROWS) continue;        // never overshoot onto boss
+      const dest = gridPosToTile(targetRow, col);
+      if (dest === null || dest === 64) continue;
+      if (dest <= origin) continue;
+      if (tiles[dest].type !== T.NORMAL) continue;
+      if (reserved.has(dest)) continue;
       let hasIntermediate = false;
-      for (let p = origin + 1; p < (dest === 64 ? 64 : dest); p++) {
+      for (let p = origin + 1; p < dest; p++) {
         if (tiles[p].type === T.NORMAL) { hasIntermediate = true; break; }
       }
       if (!hasIntermediate) continue;
-
-      chosen = { origin, dest, fallRows };
-      break;
+      return { origin, dest, fallRows };
     }
-    if (!chosen) continue;
+    return null;
+  }
 
+  function spacedAndFree(origin) {
+    if (reserved.has(origin)) return false;   // not on someone else's landing
+    for (const p of placed) {
+      if (Math.abs(p.origin - origin) < 2) return false; // no adjacent holes
+    }
+    return true;
+  }
+
+  // Place the single 2-row hole first. Its origin must be in rows 0..5
+  // (tiles 6..48); row-6 origins (50..56) can only carry a 1-row fall.
+  let placed2 = null;
+  for (const origin of shuffle(eligible)) {
+    if (origin > 48) continue;
+    if (!spacedAndFree(origin)) continue;
+    const chosen = pickFor(origin, [2]);
+    if (chosen) { placed2 = chosen; break; }
+  }
+  if (!placed2) return null;
+  placed.push(placed2);
+  reserved.add(placed2.dest);
+
+  // Place the two 1-row holes.
+  for (const origin of shuffle(eligible)) {
+    if (placed.length >= 3) break;
+    if (!spacedAndFree(origin)) continue;
+    const chosen = pickFor(origin, [1]);
+    if (!chosen) continue;
     placed.push(chosen);
-    if (chosen.dest !== 64) reserved.add(chosen.dest);
+    reserved.add(chosen.dest);
   }
 
   if (placed.length < 3) return null;
@@ -334,21 +360,31 @@ function placeLadders(tiles, holeReserved) {
 
 function validateBoard(tiles) {
   // Hard post-check the spec invariants that have caused regressions before.
+  const holeOrigins = [];
+  let oneRowHoles = 0, twoRowHoles = 0;
   for (let i = 1; i <= 64; i++) {
     const t = tiles[i];
     if (t.type !== T.HOLE) continue;
     if (!t.dest) return false;
-    // Destination must be tile 64 (overshoot) or column-aligned 1–2 rows down.
+    if (t.dest === 64) return false;            // never fall onto the boss
+    if (i === 49) return false;                 // forbidden origin
+    if (i < 6 || i > 56) return false;          // origin must be in 6..56
+    if (i >= 50 && i <= 56 && t.fallRows !== 1) return false; // row 6 → 1-row only
+    if (t.fallRows !== 1 && t.fallRows !== 2) return false;
     const { row: rOrig, col } = tileGridPos(i);
     const expectedRow = rOrig + t.fallRows;
-    if (expectedRow >= ROWS) {
-      if (t.dest !== 64) return false;
-    } else {
-      const expected = gridPosToTile(expectedRow, col);
-      if (t.dest !== expected) return false;
-      const d = tiles[t.dest];
-      if (!d || d.type !== T.NORMAL) return false;
-    }
+    if (expectedRow >= ROWS) return false;       // overshoot is not permitted
+    const expected = gridPosToTile(expectedRow, col);
+    if (t.dest !== expected) return false;
+    const d = tiles[t.dest];
+    if (!d || d.type !== T.NORMAL) return false;
+    if (t.fallRows === 1) oneRowHoles++; else twoRowHoles++;
+    holeOrigins.push(i);
+  }
+  if (oneRowHoles !== 2 || twoRowHoles !== 1) return false;
+  holeOrigins.sort((a, b) => a - b);
+  for (let i = 1; i < holeOrigins.length; i++) {
+    if (holeOrigins[i] - holeOrigins[i - 1] < 2) return false;
   }
   // Ladders: forward-only, land on NORMAL or ITEM, non-adjacent, ≤2 per row,
   // ≥1 in first half and ≥1 in second half.
@@ -572,26 +608,108 @@ function TileRect({ tile }) {
   );
 }
 
-function Abyss({ tile }) {
-  // Irregular dark shape replacing the tile + breaking the road.
-  const { x, y, cx, cy } = tilePos(tile.num);
-  // Build a jagged polygon roughly matching the tile bounds.
-  const r = TILE / 2 + 4;
+// Shared by Abyss + TileHighlight so the highlight traces the same shape as
+// the abyss. radiusScale lets the highlight ring sit slightly outside the
+// abyss edge.
+function holePolygonPoints(num, radiusScale = 1) {
+  const { cx, cy } = tilePos(num);
+  const r = (TILE / 2 + 4) * radiusScale;
   const pts = [];
   const N = 14;
   for (let i = 0; i < N; i++) {
     const ang = (i / N) * Math.PI * 2;
-    const jitter = 0.78 + ((i * 37) % 100) / 360; // pseudo-random but deterministic per tile
+    const jitter = 0.78 + ((i * 37) % 100) / 360; // deterministic per vertex
     const rr = r * jitter;
     pts.push(`${(cx + Math.cos(ang) * rr).toFixed(1)},${(cy + Math.sin(ang) * rr).toFixed(1)}`);
   }
+  return pts.join(" ");
+}
+
+function Abyss({ tile }) {
+  // Irregular dark shape replacing the tile + breaking the road.
+  const { x, y, cx, cy } = tilePos(tile.num);
   return (
     <g>
-      <polygon points={pts.join(" ")} fill={PALETTE.abyss} stroke={PALETTE.abyssEdge} strokeWidth={2} />
+      <polygon points={holePolygonPoints(tile.num)} fill={PALETTE.abyss}
+               stroke={PALETTE.abyssEdge} strokeWidth={2} />
       <NumBadge x={x + 5} y={y + 13} n={tile.num} light />
       <CenteredLabel cx={cx} cy={cy - 3} text="HOLE" fill={PALETTE.textLight} size={11} />
       <CenteredLabel cx={cx} cy={cy + 11} text={`↓ ${tile.dest}`} fill={PALETTE.textLight} size={10} weight={600} />
     </g>
+  );
+}
+
+// =============================================================================
+// PHASE 2 — PLAYER CHIP & TILE HIGHLIGHT
+// =============================================================================
+
+function TileHighlight({ tile, tiles, character }) {
+  if (tile === null || tile === undefined) return null;
+  if (!character) return null;
+  const t = tiles[tile];
+  if (!t) return null;
+  const color = character === "shaolin" ? "#22c55e" : "#ff5252";
+
+  if (t.type === T.HOLE) {
+    // Trace the abyss polygon so the highlight matches its irregular shape.
+    return (
+      <g pointerEvents="none">
+        <polygon
+          points={holePolygonPoints(tile, 1.1)}
+          fill="none" stroke={color} strokeWidth={3}
+          opacity={0.5} strokeLinejoin="round"
+        />
+        <polygon
+          points={holePolygonPoints(tile)}
+          fill="none" stroke={color} strokeWidth={3.5}
+          strokeLinejoin="round"
+        />
+      </g>
+    );
+  }
+
+  const p = tilePos(tile);
+  return (
+    <g pointerEvents="none">
+      <rect
+        x={p.x - 6} y={p.y - 6}
+        width={TILE + 12} height={TILE + 12}
+        rx={12} fill="none"
+        stroke={color} strokeWidth={2} opacity={0.45}
+      />
+      <rect
+        x={p.x - 3} y={p.y - 3}
+        width={TILE + 6} height={TILE + 6}
+        rx={9} fill="none"
+        stroke={color} strokeWidth={3}
+      />
+    </g>
+  );
+}
+
+function PlayerChip({ tile, character }) {
+  if (!character) return null;
+  const emoji = character === "shaolin" ? "🥋" : "🥷";
+  if (tile === null) {
+    return (
+      <g pointerEvents="none">
+        <rect x={2} y={2} width={70} height={22} rx={5}
+              fill="#000" opacity={0.55} />
+        <text x={8} y={18} fontSize={16}>{emoji}</text>
+        <text x={28} y={17} fontSize={11} fill="#fff8e7"
+              fontFamily="sans-serif" fontWeight={700}>Start</text>
+      </g>
+    );
+  }
+  const p = tilePos(tile);
+  return (
+    <text
+      x={p.x + TILE - 3} y={p.y + 19}
+      fontSize={17} textAnchor="end"
+      style={{ pointerEvents: "none" }}
+    >
+      {emoji}
+    </text>
   );
 }
 
@@ -680,7 +798,7 @@ function PathArrows({ tiles }) {
 // BOARD COMPONENT
 // =============================================================================
 
-function Board({ tiles }) {
+function Board({ tiles, playerTile, character }) {
   const ladderLinks = useMemo(() => {
     const links = [];
     for (let i = 1; i <= 64; i++) {
@@ -709,7 +827,9 @@ function Board({ tiles }) {
         </marker>
       </defs>
 
-      {/* Road, three layers + dashed center stripe to read like an actual road. */}
+      {/* Road, three layers + rounded joins/caps. Stroke widths are wide enough
+          that the round corner arcs (radius = strokeWidth/2) keep ~12 px
+          clearance from tile corners, so tiles never appear to touch the edge. */}
       <path d={d} fill="none" stroke={PALETTE.roadEdge} strokeWidth={ROAD_OUTER}
             strokeLinecap="round" strokeLinejoin="round" />
       <path d={d} fill="none" stroke={PALETTE.road} strokeWidth={ROAD_INNER}
@@ -734,6 +854,10 @@ function Board({ tiles }) {
       {Array.from({ length: 64 }, (_, i) => i + 1)
         .filter((n) => tiles[n].type === T.HOLE)
         .map((n) => <Abyss key={`h${n}`} tile={tiles[n]} />)}
+
+      {/* Player tile highlight + chip (Phase 2) */}
+      <TileHighlight tile={playerTile} tiles={tiles} character={character} />
+      <PlayerChip tile={playerTile} character={character} />
     </svg>
   );
 }
@@ -762,7 +886,7 @@ function summarize(tiles) {
   return { counts, ninjaCounts, trapList, holeList, ladderList };
 }
 
-function InfoPanel({ tiles, attempts, onRegenerate }) {
+function InfoPanel({ tiles, attempts, onRegenerate, isRolling }) {
   const s = summarize(tiles);
   const row = (k, v, expected) => {
     const ok = v === expected;
@@ -830,10 +954,13 @@ function InfoPanel({ tiles, attempts, onRegenerate }) {
       </div>
       <button
         onClick={onRegenerate}
+        disabled={isRolling}
         style={{
           marginTop: 12, width: "100%", padding: "8px 12px",
           background: "#7a5500", color: "#fff8e7", border: "none",
-          borderRadius: 6, fontWeight: 600, cursor: "pointer", fontSize: 13,
+          borderRadius: 6, fontWeight: 600, fontSize: 13,
+          cursor: isRolling ? "not-allowed" : "pointer",
+          opacity: isRolling ? 0.5 : 1,
         }}
       >
         Regenerate Board
@@ -846,8 +973,67 @@ function InfoPanel({ tiles, attempts, onRegenerate }) {
 // TOP-LEVEL COMPONENT
 // =============================================================================
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
 export default function ShaolinGame() {
   const [board, setBoard] = useState(() => generateBoard());
+  const [character, setCharacter] = useState(null);   // null | "shaolin" | "ninja"
+  const [playerTile, setPlayerTile] = useState(null); // null = start, else 1..64
+  const [diceValue, setDiceValue] = useState(1);
+  const [isRolling, setIsRolling] = useState(false);
+
+  function selectCharacter(c) {
+    if (isRolling) return;
+    setCharacter(c);
+    setPlayerTile(null);
+  }
+
+  function regenerate() {
+    if (isRolling) return;
+    setBoard(generateBoard());
+    setPlayerTile(null);
+  }
+
+  async function rollAndMove() {
+    if (isRolling || !character) return;
+    setIsRolling(true);
+    const tiles = board.tiles;
+    let current = playerTile;
+    for (let i = 0; i < diceValue; i++) {
+      let next;
+      if (current === null) next = 1;
+      else if (current >= 64) next = 1; // wrap (test mode)
+      else next = current + 1;
+
+      if (tiles[next].type === T.HOLE) {
+        // Animate the fall: highlight the hole tile, then (for 2-row falls)
+        // briefly highlight the path tile one row below it, then land on the
+        // destination. Each stage uses the same 0.5s pace as a normal step.
+        // Falling into a hole ends the move — any remaining dice steps are
+        // discarded (the hole itself is the turn-ender).
+        const hole = tiles[next];
+        setPlayerTile(next);
+        await sleep(500);
+        if (hole.fallRows === 2) {
+          const { row: rOrig, col } = tileGridPos(next);
+          const intermediate = gridPosToTile(rOrig + 1, col);
+          if (intermediate !== null && intermediate !== hole.dest) {
+            setPlayerTile(intermediate);
+            await sleep(500);
+          }
+        }
+        setPlayerTile(hole.dest);
+        current = hole.dest;
+        break;
+      }
+
+      setPlayerTile(next);
+      current = next;
+
+      if (i < diceValue - 1) await sleep(500);
+    }
+    setIsRolling(false);
+  }
 
   if (!board.tiles) {
     return (
@@ -858,6 +1044,21 @@ export default function ShaolinGame() {
     );
   }
 
+  const btn = {
+    padding: "6px 12px", borderRadius: 6, border: "1px solid #c4ad7b",
+    background: "#fff8e7", color: PALETTE.text,
+    fontFamily: "inherit", fontSize: 13, fontWeight: 600,
+    cursor: "pointer",
+  };
+  const btnActive = {
+    ...btn, background: "#7a5500", color: "#fff8e7", borderColor: "#7a5500",
+  };
+  const styleFor = (active, disabled) => ({
+    ...(active ? btnActive : btn),
+    cursor: disabled ? "not-allowed" : "pointer",
+    opacity: disabled ? 0.5 : 1,
+  });
+
   return (
     <div style={{
       minHeight: "100vh", padding: 20, background: "#1f1a10",
@@ -867,17 +1068,77 @@ export default function ShaolinGame() {
         Shaolin Master vs The Shadow Clan
       </h1>
       <div style={{ fontSize: 13, opacity: 0.7, marginBottom: 16 }}>
-        Phase 1 — Board generation
+        Phase 2 — Movement (test mode)
       </div>
+
+      <div style={{
+        display: "flex", gap: 16, marginBottom: 16, alignItems: "center",
+        flexWrap: "wrap", padding: "12px 14px", background: "#fff8e7",
+        border: "1px solid #c4ad7b", borderRadius: 8, color: PALETTE.text,
+        fontFamily: "sans-serif",
+      }}>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button
+            onClick={() => selectCharacter("shaolin")}
+            disabled={isRolling}
+            style={styleFor(character === "shaolin", isRolling)}
+          >
+            🥋 Play as Shaolin Master
+          </button>
+          <button
+            onClick={() => selectCharacter("ninja")}
+            disabled={isRolling}
+            style={styleFor(character === "ninja", isRolling)}
+          >
+            🥷 Play as Ninja
+          </button>
+        </div>
+
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <span style={{ fontSize: 13 }}>Roll value:</span>
+          <select
+            value={diceValue}
+            onChange={(e) => setDiceValue(+e.target.value)}
+            disabled={isRolling}
+            style={{ ...btn, padding: "5px 8px", cursor: isRolling ? "not-allowed" : "pointer" }}
+          >
+            {[1, 2, 3, 4, 5, 6].map((n) => (
+              <option key={n} value={n}>{n}</option>
+            ))}
+          </select>
+          <button
+            onClick={rollAndMove}
+            disabled={isRolling || !character}
+            style={styleFor(true, isRolling || !character)}
+          >
+            {isRolling ? "Rolling…" : "Roll"}
+          </button>
+        </div>
+
+        <div style={{ marginLeft: "auto", fontSize: 13 }}>
+          {character ? (
+            <>
+              {character === "shaolin" ? "🥋 Shaolin Master" : "🥷 Ninja"}
+              {" · "}
+              Position:{" "}
+              <strong>{playerTile === null ? "start" : `tile ${playerTile}`}</strong>
+            </>
+          ) : (
+            <em>Choose a character to place your chip on the board.</em>
+          )}
+        </div>
+      </div>
+
       <div style={{ display: "flex", gap: 20, alignItems: "flex-start", flexWrap: "wrap" }}>
         <div style={{ flex: "1 1 auto", minWidth: 0 }}>
-          <Board tiles={board.tiles} />
+          <Board tiles={board.tiles} playerTile={playerTile} character={character} />
         </div>
         <div style={{ flex: "0 0 auto" }}>
           <InfoPanel
             tiles={board.tiles}
             attempts={board.attempts}
-            onRegenerate={() => setBoard(generateBoard())}
+            onRegenerate={regenerate}
+            isRolling={isRolling}
           />
         </div>
       </div>
