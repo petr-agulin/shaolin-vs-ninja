@@ -132,9 +132,9 @@ Every generated board must satisfy all of the following:
 
 **Boss tile (64):** Any roll that would move a player to tile 64 or beyond lands them on tile 64 exactly. The excess is discarded.
 
-**Team mode:** The player reaches tile 64 when any roll lands them there or past it. The approach zone (tiles 60–63) guarantees arrival within one to four turns once entered. The boss fight begins immediately upon landing.
+**Team mode:** The player reaches tile 64 when any roll lands them there or past it. The boss fight begins immediately upon landing.
 
-**Versus mode:** The same overshoot rule applies to both players independently. The first player to land on tile 64 triggers the Ultimate Duel immediately — the second player does not need to reach tile 64 for the duel to happen. If the first player loses the duel, they are sent back to tile 40, and the second player now has their own chance to reach tile 64 and trigger a new duel. The approach zone applies equally to both players.
+**Versus mode:** The same overshoot rule applies to both players independently. The first player to land on tile 64 triggers the Ultimate Duel immediately — the second player does not need to reach tile 64 for the duel to happen. If the first player loses the duel, they are sent back to tile 40, and the second player now has their own chance to reach tile 64 and trigger a new duel.
 
 ---
 

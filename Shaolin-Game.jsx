@@ -996,6 +996,123 @@ function InfoPanel({ tiles, attempts, onRegenerate, isRolling }) {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // =============================================================================
+// PHASE 5 — COMBAT (pose data, ninja info, resolver)
+// =============================================================================
+
+const BASE_POSES_SHAOLIN = [
+  { id: "flying_kick",    name: "Flying Kick",    type: "Strike", height: "High" },
+  { id: "dragon_fist",    name: "Dragon Fist",    type: "Strike", height: "Mid"  },
+  { id: "crescent_sweep", name: "Crescent Sweep", type: "Strike", height: "Low"  },
+  { id: "iron_guard",     name: "Iron Guard",     type: "Block",  height: "High" },
+  { id: "tiger_block",    name: "Tiger Block",    type: "Block",  height: "Mid"  },
+  { id: "mountain_stance",name: "Mountain Stance",type: "Block",  height: "Low"  },
+  { id: "shadow_step",    name: "Shadow Step",    type: "Dodge",  height: "High" },
+  { id: "cat_retreat",    name: "Cat Retreat",    type: "Dodge",  height: "Mid"  },
+  { id: "low_slip",       name: "Low Slip",       type: "Dodge",  height: "Low"  },
+];
+
+const BASE_POSES_NINJA = [
+  { id: "blade_edge",    name: "Blade Edge",    type: "Strike", height: "High" },
+  { id: "death_kick",    name: "Death Kick",    type: "Strike", height: "Mid"  },
+  { id: "spinning_fist", name: "Spinning Fist", type: "Strike", height: "Low"  },
+  { id: "turtle_shell",  name: "Turtle Shell",  type: "Block",  height: "High" },
+  { id: "stone_wall",    name: "Stone Wall",    type: "Block",  height: "Mid"  },
+  { id: "shield_cross",  name: "Shield Cross",  type: "Block",  height: "Low"  },
+  { id: "phantom_drift", name: "Phantom Drift", type: "Dodge",  height: "High" },
+  { id: "snake_coil",    name: "Snake Coil",    type: "Dodge",  height: "Mid"  },
+  { id: "wind_escape",   name: "Wind Escape",   type: "Dodge",  height: "Low"  },
+];
+
+const NINJA_DESCRIPTIONS = {
+  black:  "Disciplined assassin of the Shadow Clan. Defeat sends you back 2 tiles.",
+  fire:   "Wild flame warrior who fights with reckless fury. Defeat sends you back 3 tiles.",
+  shadow: "Elusive trickster who strikes from the gloom. Defeat sends you back 3 tiles.",
+  demon:  "Fearsome champion bearing forbidden techniques. Defeat sends you back 5 tiles.",
+};
+
+const NINJA_SETBACK = { black: 2, fire: 3, shadow: 3, demon: 5 };
+
+// Type weights for computer-controlled enemies (regular fight encounters).
+// Demon's 15% extra-pose chance is intentionally ignored for now — all four
+// ninja types pick exclusively from BASE_POSES_NINJA.
+const NINJA_POSE_WEIGHTS = {
+  black:  { Strike: 33, Block: 33, Dodge: 34 },
+  fire:   { Strike: 60, Block: 20, Dodge: 20 },
+  shadow: { Strike: 20, Block: 20, Dodge: 60 },
+  demon:  { Strike: 34, Block: 33, Dodge: 33 },
+};
+
+function pickComputerPose(ninjaType) {
+  const w = NINJA_POSE_WEIGHTS[ninjaType];
+  const total = w.Strike + w.Block + w.Dodge;
+  const r = Math.random() * total;
+  let type;
+  if (r < w.Strike) type = "Strike";
+  else if (r < w.Strike + w.Block) type = "Block";
+  else type = "Dodge";
+  const candidates = BASE_POSES_NINJA.filter((p) => p.type === type);
+  return candidates[Math.floor(Math.random() * candidates.length)];
+}
+
+function strikeVsDodge(strike, dodge, strikeSide, dodgeSide) {
+  const tbl = {
+    "High|High": ["def", "Dodge-High moves the head out of reach"],
+    "High|Mid":  ["def", "Dodge-Mid moves the head out of reach"],
+    "High|Low":  ["atk", "Dodge-Low leaves the head exposed"],
+    "Mid|High":  ["atk", "Dodge-High does not move the chest away"],
+    "Mid|Mid":   ["atk", "Dodge-Mid does not move the chest away"],
+    "Mid|Low":   ["def", "Dodge-Low moves the chest away sufficiently"],
+    "Low|High":  ["atk", "Dodge-High does not move the legs away"],
+    "Low|Mid":   ["dice","Dodge-Mid is a partial evasion — dice decides"],
+    "Low|Low":   ["def", "Dodge-Low moves the legs away"],
+  };
+  const [code, why] = tbl[`${strike.height}|${dodge.height}`];
+  const matchup = `Strike-${strike.height} vs Dodge-${dodge.height}`;
+  if (code === "atk") return { winner: strikeSide, reason: `${matchup}: Strike wins — ${why}` };
+  if (code === "def") return { winner: dodgeSide, reason: `${matchup}: Dodge wins — ${why}` };
+  return { winner: "dice", reason: `${matchup}: ${why}` };
+}
+
+function strikeVsBlock(strike, block, strikeSide, blockSide) {
+  const tbl = {
+    "High|High": ["def", "block aligned with the strike"],
+    "High|Mid":  ["dice","adjacent height, dice decides"],
+    "High|Low":  ["atk", "block too low to deflect a head strike"],
+    "Mid|High":  ["dice","adjacent height, dice decides"],
+    "Mid|Mid":   ["def", "block aligned with the strike"],
+    "Mid|Low":   ["dice","adjacent height, dice decides"],
+    "Low|High":  ["atk", "block too high to stop a leg sweep"],
+    "Low|Mid":   ["dice","adjacent height, dice decides"],
+    "Low|Low":   ["def", "block aligned with the strike"],
+  };
+  const [code, why] = tbl[`${strike.height}|${block.height}`];
+  const matchup = `Strike-${strike.height} vs Block-${block.height}`;
+  if (code === "atk") return { winner: strikeSide, reason: `${matchup}: Strike wins — ${why}` };
+  if (code === "def") return { winner: blockSide, reason: `${matchup}: Block wins — ${why}` };
+  return { winner: "dice", reason: `${matchup}: ${why}` };
+}
+
+function reasonForOther(t1, t2) {
+  if (t1 === "Strike" && t2 === "Strike") return "both connect — who hit harder";
+  if (t1 === "Block"  && t2 === "Block")  return "positional standoff";
+  if (t1 === "Dodge"  && t2 === "Dodge")  return "both evading";
+  return "both defensive, neither attacking";
+}
+
+function resolveCombat(p1Pose, p2Pose) {
+  const p1S = p1Pose.type === "Strike";
+  const p2S = p2Pose.type === "Strike";
+  if (p1S && p2Pose.type === "Dodge") return strikeVsDodge(p1Pose, p2Pose, "p1", "p2");
+  if (p2S && p1Pose.type === "Dodge") return strikeVsDodge(p2Pose, p1Pose, "p2", "p1");
+  if (p1S && p2Pose.type === "Block") return strikeVsBlock(p1Pose, p2Pose, "p1", "p2");
+  if (p2S && p1Pose.type === "Block") return strikeVsBlock(p2Pose, p1Pose, "p2", "p1");
+  return {
+    winner: "dice",
+    reason: `${p1Pose.type} vs ${p2Pose.type}: ${reasonForOther(p1Pose.type, p2Pose.type)}, dice decides`,
+  };
+}
+
+// =============================================================================
 // PHASE 4 — MODAL COMPONENTS
 // =============================================================================
 
@@ -1062,6 +1179,360 @@ function LadderModal({ tileNum, dest, onUse, onStay }) {
   );
 }
 
+// ---- Shared modal styles ----------------------------------------------------
+const MODAL_OVERLAY = {
+  position: "fixed", inset: 0,
+  background: "rgba(0,0,0,0.78)",
+  display: "flex", alignItems: "center", justifyContent: "center",
+  zIndex: 1000,
+};
+const MODAL_BOX = {
+  background: "#fff8e7",
+  border: "2px solid #c4ad7b",
+  borderRadius: 14,
+  padding: "28px 32px",
+  textAlign: "center",
+  boxShadow: "0 8px 40px rgba(0,0,0,0.6)",
+  fontFamily: "Georgia, serif",
+  color: PALETTE.text,
+};
+const BTN_PRIMARY = {
+  padding: "9px 22px", borderRadius: 7,
+  background: "#7a5500", color: "#fff8e7",
+  border: "none", fontFamily: "Georgia, serif",
+  fontSize: 14, fontWeight: 700, cursor: "pointer",
+};
+const BTN_SECONDARY = {
+  padding: "9px 22px", borderRadius: 7,
+  background: "#fff8e7", color: PALETTE.text,
+  border: "1px solid #c4ad7b", fontFamily: "Georgia, serif",
+  fontSize: 14, fontWeight: 600, cursor: "pointer",
+};
+
+function FightIntroModal({ ninjaType, onFight }) {
+  const info = NINJA[ninjaType];
+  return (
+    <div style={MODAL_OVERLAY}>
+      <div style={{ ...MODAL_BOX, maxWidth: 400, width: "90%" }}>
+        <div style={{ fontSize: 38, marginBottom: 4 }}>⚔️</div>
+        <h2 style={{ margin: "0 0 6px 0", fontSize: 20 }}>An Encounter!</h2>
+        <div style={{
+          display: "inline-block",
+          padding: "4px 12px", borderRadius: 6,
+          background: info.color, color: "#fff8e7",
+          fontSize: 14, fontWeight: 700, letterSpacing: 0.5,
+          marginBottom: 14,
+        }}>
+          {info.name}
+        </div>
+        <p style={{ fontSize: 14, lineHeight: 1.55, marginBottom: 22, color: "#5a4317" }}>
+          {NINJA_DESCRIPTIONS[ninjaType]}
+        </p>
+        <button style={BTN_PRIMARY} onClick={onFight}>Fight!</button>
+      </div>
+    </div>
+  );
+}
+
+// ---- BattleScreen ----------------------------------------------------------
+// Best of 3 rounds. P1 = active player (rolled into the tile). P2 = the other.
+// Pose sets are tied to character ("shaolin" → SHAOLIN poses, "ninja" → NINJA poses).
+// Phases:
+//   p1_choose → handoff_p2 → p2_choose → reveal (with optional dice subphase)
+//   → either round_result → next round (handoff_p1 → p1_choose...) or → battle_end
+
+function PoseCard({ pose, selected, onSelect }) {
+  const typeColors = {
+    Strike: { bg: "#fde2dc", edge: "#b03a48", text: "#8a1c2b" },
+    Block:  { bg: "#dce7f5", edge: "#2c558a", text: "#1a3a66" },
+    Dodge:  { bg: "#e2f0d8", edge: "#3e7d34", text: "#26571e" },
+  };
+  const c = typeColors[pose.type];
+  return (
+    <button
+      onClick={onSelect}
+      style={{
+        textAlign: "left",
+        background: c.bg,
+        border: selected ? `3px solid #7a5500` : `2px solid ${c.edge}`,
+        borderRadius: 10,
+        padding: "10px 12px",
+        cursor: "pointer",
+        fontFamily: "Georgia, serif",
+        color: c.text,
+        minWidth: 140,
+        boxShadow: selected ? "0 0 0 3px rgba(122,85,0,0.25)" : "none",
+      }}
+    >
+      <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 4 }}>{pose.name}</div>
+      <div style={{ fontSize: 12 }}>
+        <strong>{pose.type}</strong> / {pose.height}
+      </div>
+    </button>
+  );
+}
+
+function ScorePips({ scores, p1Label, p2Label }) {
+  const Pip = ({ filled, color }) => (
+    <span style={{
+      display: "inline-block", width: 14, height: 14, borderRadius: "50%",
+      background: filled ? color : "transparent",
+      border: `2px solid ${color}`, marginRight: 4,
+    }} />
+  );
+  return (
+    <div style={{ display: "flex", gap: 24, justifyContent: "center", margin: "8px 0 16px 0", fontSize: 13 }}>
+      <div>
+        <strong style={{ color: "#22c55e" }}>{p1Label}</strong>{" "}
+        <Pip filled={scores.p1 >= 1} color="#22c55e" />
+        <Pip filled={scores.p1 >= 2} color="#22c55e" />
+      </div>
+      <div>
+        <strong style={{ color: "#ff5252" }}>{p2Label}</strong>{" "}
+        <Pip filled={scores.p2 >= 1} color="#ff5252" />
+        <Pip filled={scores.p2 >= 2} color="#ff5252" />
+      </div>
+    </div>
+  );
+}
+
+function BattleScreen({ mode = "duel", ninjaType, activeCharacter, otherCharacter, p1Label, p2Label, onResolved }) {
+  const isSolo = mode === "solo";
+  const p1Poses = activeCharacter === "shaolin" ? BASE_POSES_SHAOLIN : BASE_POSES_NINJA;
+  // In solo mode the opponent is always the on-tile ninja → NINJA pose set.
+  const p2Poses = isSolo
+    ? BASE_POSES_NINJA
+    : (otherCharacter === "shaolin" ? BASE_POSES_SHAOLIN : BASE_POSES_NINJA);
+
+  const [phase, setPhase] = useState("p1_choose");
+  const [round, setRound] = useState(1);
+  const [scores, setScores] = useState({ p1: 0, p2: 0 });
+  const [p1Choice, setP1Choice] = useState(null);
+  const [p2Choice, setP2Choice] = useState(null);
+  const [selecting, setSelecting] = useState(null); // current tentative pick
+  const [outcome, setOutcome] = useState(null);     // { winner, reason }
+  const [dice, setDice] = useState(null);           // { p1, p2, tries }
+  const [finalWinner, setFinalWinner] = useState(null); // "p1" | "p2"
+
+  function confirmP1() {
+    if (!selecting) return;
+    const p1 = selecting;
+    setP1Choice(p1);
+    setSelecting(null);
+    if (isSolo) {
+      const cpu = pickComputerPose(ninjaType);
+      setP2Choice(cpu);
+      const result = resolveCombat(p1, cpu);
+      setOutcome(result);
+      if (result.winner !== "dice") setFinalWinner(result.winner);
+      setPhase("reveal");
+    } else {
+      setPhase("handoff_p2");
+    }
+  }
+  function readyFor(player) {
+    setPhase(player === "p1" ? "p1_choose" : "p2_choose");
+  }
+  function confirmP2() {
+    if (!selecting) return;
+    const p2 = selecting;
+    setP2Choice(p2);
+    setSelecting(null);
+    const result = resolveCombat(p1Choice, p2);
+    setOutcome(result);
+    if (result.winner !== "dice") {
+      setFinalWinner(result.winner);
+    }
+    setPhase("reveal");
+  }
+  function rollDice() {
+    let a, b, tries = 0;
+    do {
+      a = Math.floor(Math.random() * 6) + 1;
+      b = Math.floor(Math.random() * 6) + 1;
+      tries++;
+    } while (a === b);
+    setDice({ p1: a, p2: b, tries });
+    setFinalWinner(a > b ? "p1" : "p2");
+  }
+  function nextRound() {
+    const winner = finalWinner;
+    const newScores = { ...scores, [winner]: scores[winner] + 1 };
+    setScores(newScores);
+    if (newScores.p1 >= 2 || newScores.p2 >= 2) {
+      setPhase("battle_end");
+    } else {
+      setRound((r) => r + 1);
+      setP1Choice(null);
+      setP2Choice(null);
+      setOutcome(null);
+      setDice(null);
+      setFinalWinner(null);
+      setSelecting(null);
+      setPhase(isSolo ? "p1_choose" : "handoff_p1");
+    }
+  }
+  function finishBattle() {
+    const battleWinner = scores.p1 >= 2 ? "p1" : "p2";
+    onResolved(battleWinner === "p1" ? "won" : "lost");
+  }
+
+  const ninjaInfo = NINJA[ninjaType];
+
+  // ---- render helpers ----
+  function chooseScreen(player, label, poses) {
+    const color = player === "p1" ? "#22c55e" : "#ff5252";
+    return (
+      <div style={{ ...MODAL_BOX, maxWidth: 720, width: "94%" }}>
+        <div style={{ fontSize: 13, color: "#7a5500", marginBottom: 2 }}>
+          Round {round} of 3 — vs {ninjaInfo.name}
+        </div>
+        <ScorePips scores={scores} p1Label={p1Label} p2Label={p2Label} />
+        <h2 style={{ margin: "0 0 4px 0", fontSize: 18, color }}>
+          {label}, choose your pose
+        </h2>
+        {!isSolo && (
+          <div style={{ fontSize: 12, fontStyle: "italic", marginBottom: 14, color: "#6b4f1a" }}>
+            (other player look away)
+          </div>
+        )}
+        {isSolo && (
+          <div style={{ fontSize: 12, fontStyle: "italic", marginBottom: 14, color: "#6b4f1a" }}>
+            facing the {NINJA[ninjaType].name}
+          </div>
+        )}
+        <div style={{
+          display: "grid", gridTemplateColumns: "repeat(3, 1fr)",
+          gap: 10, marginBottom: 16,
+        }}>
+          {poses.map((pose) => (
+            <PoseCard
+              key={pose.id}
+              pose={pose}
+              selected={selecting?.id === pose.id}
+              onSelect={() => setSelecting(pose)}
+            />
+          ))}
+        </div>
+        <button
+          style={{ ...BTN_PRIMARY, opacity: selecting ? 1 : 0.45, cursor: selecting ? "pointer" : "not-allowed" }}
+          onClick={player === "p1" ? confirmP1 : confirmP2}
+          disabled={!selecting}
+        >
+          {player === "p1"
+            ? (isSolo ? "Confirm pose" : "I have chosen — pass to other player")
+            : "Reveal"}
+        </button>
+      </div>
+    );
+  }
+
+  function handoffScreen(toPlayer, label) {
+    const color = toPlayer === "p1" ? "#22c55e" : "#ff5252";
+    return (
+      <div style={{ ...MODAL_BOX, maxWidth: 420, width: "90%" }}>
+        <div style={{ fontSize: 13, color: "#7a5500", marginBottom: 6 }}>
+          Round {round} of 3
+        </div>
+        <ScorePips scores={scores} p1Label={p1Label} p2Label={p2Label} />
+        <div style={{ fontSize: 40, marginBottom: 8 }}>🤲</div>
+        <h2 style={{ margin: "0 0 10px 0", fontSize: 18 }}>Pass the device</h2>
+        <p style={{ fontSize: 14, marginBottom: 22, color: "#5a4317" }}>
+          Hand over to <strong style={{ color }}>{label}</strong> — they will choose their pose next.
+        </p>
+        <button style={BTN_PRIMARY} onClick={() => readyFor(toPlayer)}>
+          I am ready
+        </button>
+      </div>
+    );
+  }
+
+  function revealScreen() {
+    const winnerSide = finalWinner;
+    const needsDice = outcome.winner === "dice" && !dice;
+    return (
+      <div style={{ ...MODAL_BOX, maxWidth: 640, width: "94%" }}>
+        <div style={{ fontSize: 13, color: "#7a5500", marginBottom: 2 }}>
+          Round {round} of 3 — vs {ninjaInfo.name}
+        </div>
+        <ScorePips scores={scores} p1Label={p1Label} p2Label={p2Label} />
+        <h2 style={{ margin: "0 0 14px 0", fontSize: 18 }}>Reveal</h2>
+        <div style={{ display: "flex", gap: 18, justifyContent: "center", marginBottom: 14 }}>
+          <div style={{ flex: 1, maxWidth: 220 }}>
+            <div style={{ fontSize: 13, color: "#22c55e", fontWeight: 700, marginBottom: 6 }}>{p1Label}</div>
+            <PoseCard pose={p1Choice} selected={false} onSelect={() => {}} />
+          </div>
+          <div style={{ alignSelf: "center", fontSize: 20, color: "#7a5500" }}>vs</div>
+          <div style={{ flex: 1, maxWidth: 220 }}>
+            <div style={{ fontSize: 13, color: "#ff5252", fontWeight: 700, marginBottom: 6 }}>{p2Label}</div>
+            <PoseCard pose={p2Choice} selected={false} onSelect={() => {}} />
+          </div>
+        </div>
+        <div style={{
+          background: "#f3e6c4", border: "1px dashed #c4ad7b",
+          borderRadius: 8, padding: "10px 12px", fontSize: 13,
+          color: "#5a4317", marginBottom: 14,
+        }}>
+          {outcome.reason}
+          {dice && (
+            <div style={{ marginTop: 6 }}>
+              Dice: <strong>{p1Label}</strong> rolled {dice.p1},{" "}
+              <strong>{p2Label}</strong> rolled {dice.p2}
+              {dice.tries > 1 ? ` (after ${dice.tries - 1} tie re-roll${dice.tries > 2 ? "s" : ""})` : ""}.
+            </div>
+          )}
+        </div>
+        {needsDice ? (
+          <button style={BTN_PRIMARY} onClick={rollDice}>Roll the dice</button>
+        ) : (
+          <>
+            <div style={{
+              fontSize: 16, fontWeight: 700, marginBottom: 16,
+              color: winnerSide === "p1" ? "#22c55e" : "#ff5252",
+            }}>
+              {winnerSide === "p1" ? p1Label : p2Label} wins round {round}!
+            </div>
+            <button style={BTN_PRIMARY} onClick={nextRound}>
+              {(scores[winnerSide] + 1) >= 2 ? "End battle" : "Next round"}
+            </button>
+          </>
+        )}
+      </div>
+    );
+  }
+
+  function endScreen() {
+    const battleWinner = scores.p1 >= 2 ? "p1" : "p2";
+    const won = battleWinner === "p1";
+    return (
+      <div style={{ ...MODAL_BOX, maxWidth: 420, width: "90%" }}>
+        <div style={{ fontSize: 40, marginBottom: 8 }}>{won ? "🏆" : "💀"}</div>
+        <h2 style={{ margin: "0 0 10px 0", fontSize: 20 }}>
+          {won ? "Victory!" : "Defeat"}
+        </h2>
+        <ScorePips scores={scores} p1Label={p1Label} p2Label={p2Label} />
+        <p style={{ fontSize: 14, marginBottom: 20, color: "#5a4317" }}>
+          {won
+            ? `${p1Label} defeats the ${ninjaInfo.name} and holds their ground.`
+            : `${p1Label} is bested by the ${ninjaInfo.name} and falls back ${NINJA_SETBACK[ninjaType]} tile${NINJA_SETBACK[ninjaType] === 1 ? "" : "s"}.`}
+        </p>
+        <button style={BTN_PRIMARY} onClick={finishBattle}>Continue</button>
+      </div>
+    );
+  }
+
+  return (
+    <div style={MODAL_OVERLAY}>
+      {phase === "p1_choose"   && chooseScreen("p1", p1Label, p1Poses)}
+      {phase === "handoff_p2"  && handoffScreen("p2", p2Label)}
+      {phase === "p2_choose"   && chooseScreen("p2", p2Label, p2Poses)}
+      {phase === "handoff_p1"  && handoffScreen("p1", p1Label)}
+      {phase === "reveal"      && revealScreen()}
+      {phase === "battle_end"  && endScreen()}
+    </div>
+  );
+}
+
 export default function ShaolinGame() {
   const [board, setBoard] = useState(() => generateBoard());
   const [shaolinTile, setShaolinTile] = useState(null);
@@ -1099,43 +1570,87 @@ export default function ShaolinGame() {
     const setTile = character === "shaolin" ? setShaolinTile : setNinjaTile;
     let current = character === "shaolin" ? shaolinTile : ninjaTile;
 
-    for (let i = 0; i < steps; i++) {
-      let next;
-      if (current === null) next = 1;
-      else if (current >= 64) next = 1;
-      else next = current + 1;
+    // Resolves the landing event on `tile` (chip is already shown there).
+    // Returns the final tile position after the event (and any cascading
+    // events triggered by a fight-loss setback) resolves.
+    async function resolveLanding(tile) {
+      const t = tiles[tile];
 
-      if (tiles[next].type === T.HOLE) {
-        const hole = tiles[next];
-        setTile(next);
+      if (t.type === T.HOLE) {
         await sleep(500);
-        if (hole.fallRows === 2) {
-          const { row: rOrig, col } = tileGridPos(next);
+        if (t.fallRows === 2) {
+          const { row: rOrig, col } = tileGridPos(tile);
           const intermediate = gridPosToTile(rOrig + 1, col);
-          if (intermediate !== null && intermediate !== hole.dest) {
+          if (intermediate !== null && intermediate !== t.dest) {
             setTile(intermediate);
             await sleep(500);
           }
         }
-        setTile(hole.dest);
-        current = hole.dest;
-        break;
+        setTile(t.dest);
+        return t.dest;
       }
 
-      if (tiles[next].type === T.LADDER) {
-        setTile(next);
-        current = next;
+      if (t.type === T.LADDER) {
         await sleep(400);
-        const choice = await showModal({ type: "ladder", tileNum: next, dest: tiles[next].dest });
+        const choice = await showModal({ type: "ladder", tileNum: tile, dest: t.dest });
         setModal(null);
         if (choice === "use") {
-          setTile(tiles[next].dest);
+          setTile(t.dest);
+          return t.dest;
         }
+        return tile;
+      }
+
+      if (t.type === T.FIGHT) {
+        await sleep(400);
+        const ninjaType = t.ninja;
+        await showModal({ type: "fight_intro", ninjaType });
+        setModal(null);
+        const outcome = await showModal({
+          type: "battle",
+          mode: "solo",
+          ninjaType,
+          activeCharacter: character,
+          otherCharacter: character === "shaolin" ? "ninja" : "shaolin",
+        });
+        setModal(null);
+        if (outcome === "lost") {
+          const setback = NINJA_SETBACK[ninjaType];
+          const target = Math.max(1, tile - setback);
+          let pos = tile;
+          while (pos > target) {
+            pos--;
+            await sleep(500);
+            setTile(pos);
+          }
+          // Apply normal landing logic on the final setback tile.
+          return await resolveLanding(pos);
+        }
+        return tile;
+      }
+
+      return tile;
+    }
+
+    for (let i = 0; i < steps; i++) {
+      let next;
+      if (current === null) next = 1;
+      else next = current + 1;
+
+      if (next >= 64) {
+        setTile(64);
+        current = 64;
         break;
       }
 
       setTile(next);
       current = next;
+
+      const t = tiles[next].type;
+      if (t === T.HOLE || t === T.LADDER || t === T.FIGHT) {
+        current = await resolveLanding(next);
+        break;
+      }
 
       if (i < steps - 1) await sleep(500);
     }
@@ -1169,6 +1684,7 @@ export default function ShaolinGame() {
   });
 
   const gameStarted = currentTurn !== null;
+  const bossTileReached = gameStarted && (shaolinTile === 64 || ninjaTile === 64);
 
   return (
     <div style={{
@@ -1199,20 +1715,20 @@ export default function ShaolinGame() {
         <div style={{ display: "flex", gap: 8 }}>
           <button
             onClick={() => rollFor("shaolin")}
-            disabled={!gameStarted || isRolling || (currentTurn !== "shaolin" && currentTurn !== "any")}
+            disabled={!gameStarted || isRolling || bossTileReached || (currentTurn !== "shaolin" && currentTurn !== "any")}
             style={styleFor(
-              gameStarted && (currentTurn === "shaolin" || currentTurn === "any"),
-              !gameStarted || isRolling || (currentTurn !== "shaolin" && currentTurn !== "any")
+              gameStarted && !bossTileReached && (currentTurn === "shaolin" || currentTurn === "any"),
+              !gameStarted || isRolling || bossTileReached || (currentTurn !== "shaolin" && currentTurn !== "any")
             )}
           >
             {isRolling && currentTurn === "shaolin" ? "Rolling…" : "🥋 Roll for Shaolin Master"}
           </button>
           <button
             onClick={() => rollFor("ninja")}
-            disabled={!gameStarted || isRolling || (currentTurn !== "ninja" && currentTurn !== "any")}
+            disabled={!gameStarted || isRolling || bossTileReached || (currentTurn !== "ninja" && currentTurn !== "any")}
             style={styleFor(
-              gameStarted && (currentTurn === "ninja" || currentTurn === "any"),
-              !gameStarted || isRolling || (currentTurn !== "ninja" && currentTurn !== "any")
+              gameStarted && !bossTileReached && (currentTurn === "ninja" || currentTurn === "any"),
+              !gameStarted || isRolling || bossTileReached || (currentTurn !== "ninja" && currentTurn !== "any")
             )}
           >
             {isRolling && currentTurn === "ninja" ? "Rolling…" : "🥷 Roll for Ninja"}
@@ -1246,6 +1762,18 @@ export default function ShaolinGame() {
         </div>
       </div>
 
+      {bossTileReached && (
+        <div style={{
+          marginBottom: 16, padding: "12px 18px",
+          background: "#2c1a0a", border: "1px solid #d4af37",
+          borderRadius: 8, color: "#d4af37",
+          fontFamily: "Georgia, serif", fontSize: 15,
+          textAlign: "center", letterSpacing: 0.5,
+        }}>
+          The rivals meet at last. The final duel awaits.
+        </div>
+      )}
+
       <div style={{ display: "flex", gap: 20, alignItems: "flex-start", flexWrap: "wrap" }}>
         <div style={{ flex: "1 1 auto", minWidth: 0 }}>
           <Board
@@ -1271,6 +1799,27 @@ export default function ShaolinGame() {
           dest={modal.dest}
           onUse={() => modal.resolve("use")}
           onStay={() => modal.resolve("stay")}
+        />
+      )}
+      {modal?.type === "fight_intro" && (
+        <FightIntroModal
+          ninjaType={modal.ninjaType}
+          onFight={() => modal.resolve("fight")}
+        />
+      )}
+      {modal?.type === "battle" && (
+        <BattleScreen
+          mode={modal.mode || "duel"}
+          ninjaType={modal.ninjaType}
+          activeCharacter={modal.activeCharacter}
+          otherCharacter={modal.otherCharacter}
+          p1Label={modal.activeCharacter === "shaolin" ? "🥋 Shaolin Master" : "🥷 Ninja"}
+          p2Label={
+            modal.mode === "solo"
+              ? NINJA[modal.ninjaType].name
+              : (modal.otherCharacter === "shaolin" ? "🥋 Shaolin Master" : "🥷 Ninja")
+          }
+          onResolved={(result) => modal.resolve(result)}
         />
       )}
     </div>
