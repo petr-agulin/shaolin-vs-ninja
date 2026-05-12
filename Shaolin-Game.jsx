@@ -1168,11 +1168,11 @@ function LadderModal({ tileNum, dest, onUse, onStay }) {
         </div>
         <p style={{ fontSize: 13, marginBottom: 22, color: "#7a5500" }}>
           This ladder leads to tile <strong>{dest}</strong>.
-          Do you climb, or hold your ground?
+          Do you descend, or hold your ground?
         </p>
         <div style={{ display: "flex", gap: 12, justifyContent: "center" }}>
-          <button style={btnPrimary} onClick={onUse}>Use Ladder</button>
-          <button style={btnSecondary} onClick={onStay}>Stay Here</button>
+          <button style={btnPrimary} onClick={onUse}>Climb down</button>
+          <button style={btnSecondary} onClick={onStay}>Continue forward</button>
         </div>
       </div>
     </div>
@@ -1540,6 +1540,7 @@ export default function ShaolinGame() {
   const [currentTurn, setCurrentTurn] = useState(null); // null | "any" | "shaolin" | "ninja"
   const [isRolling, setIsRolling] = useState(false);
   const [modal, setModal] = useState(null); // null | { type, resolve, ...data }
+  const [lastRoll, setLastRoll] = useState(null); // null | { value, character }
 
   function showModal(data) {
     return new Promise((resolve) => {
@@ -1552,6 +1553,7 @@ export default function ShaolinGame() {
     setShaolinTile(null);
     setNinjaTile(null);
     setCurrentTurn("any");
+    setLastRoll(null);
   }
 
   function regenerate() {
@@ -1560,6 +1562,7 @@ export default function ShaolinGame() {
     setShaolinTile(null);
     setNinjaTile(null);
     setCurrentTurn(null);
+    setLastRoll(null);
   }
 
   async function rollFor(character) {
@@ -1567,6 +1570,7 @@ export default function ShaolinGame() {
     setIsRolling(true);
     const tiles = board.tiles;
     const steps = Math.floor(Math.random() * 6) + 1;
+    setLastRoll({ value: steps, character });
     const setTile = character === "shaolin" ? setShaolinTile : setNinjaTile;
     let current = character === "shaolin" ? shaolinTile : ninjaTile;
 
@@ -1646,13 +1650,40 @@ export default function ShaolinGame() {
       setTile(next);
       current = next;
 
+      const isLastStep = i === steps - 1;
       const t = tiles[next].type;
-      if (t === T.HOLE || t === T.LADDER || t === T.FIGHT) {
+
+      // Hole is a physical gap — falling is unavoidable.
+      if (t === T.HOLE) {
         current = await resolveLanding(next);
         break;
       }
 
-      if (i < steps - 1) await sleep(500);
+      // Ladder modal opens every time the chip touches a ladder tile,
+      // whether passing through or landing. "Use" jumps to the destination
+      // and ends the move; "Stay" leaves the chip on the ladder and the
+      // remaining dice steps continue normally.
+      if (t === T.LADDER) {
+        await sleep(400);
+        const choice = await showModal({ type: "ladder", tileNum: next, dest: tiles[next].dest });
+        setModal(null);
+        if (choice === "use") {
+          setTile(tiles[next].dest);
+          current = tiles[next].dest;
+          break;
+        }
+        if (!isLastStep) await sleep(500);
+        continue;
+      }
+
+      // Fights only trigger when the final dice step lands on them —
+      // passing over a fight tile mid-roll does not start a battle.
+      if (t === T.FIGHT && isLastStep) {
+        current = await resolveLanding(next);
+        break;
+      }
+
+      if (!isLastStep) await sleep(500);
     }
 
     setIsRolling(false);
@@ -1721,7 +1752,12 @@ export default function ShaolinGame() {
               !gameStarted || isRolling || bossTileReached || (currentTurn !== "shaolin" && currentTurn !== "any")
             )}
           >
-            {isRolling && currentTurn === "shaolin" ? "Rolling…" : "🥋 Roll for Shaolin Master"}
+            {(() => {
+              const showDice = lastRoll?.character === "shaolin";
+              const dice = showDice ? ` 🎲 ${lastRoll.value}` : "";
+              if (isRolling && currentTurn === "shaolin") return `Rolling…${dice}`;
+              return `🥋 Roll for Shaolin Master${dice}`;
+            })()}
           </button>
           <button
             onClick={() => rollFor("ninja")}
@@ -1731,7 +1767,12 @@ export default function ShaolinGame() {
               !gameStarted || isRolling || bossTileReached || (currentTurn !== "ninja" && currentTurn !== "any")
             )}
           >
-            {isRolling && currentTurn === "ninja" ? "Rolling…" : "🥷 Roll for Ninja"}
+            {(() => {
+              const showDice = lastRoll?.character === "ninja";
+              const dice = showDice ? ` 🎲 ${lastRoll.value}` : "";
+              if (isRolling && currentTurn === "ninja") return `Rolling…${dice}`;
+              return `🥷 Roll for Ninja${dice}`;
+            })()}
           </button>
         </div>
 
