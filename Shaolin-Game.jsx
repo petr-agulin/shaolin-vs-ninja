@@ -643,68 +643,81 @@ function Abyss({ tile }) {
 // PHASE 2 — PLAYER CHIP & TILE HIGHLIGHT
 // =============================================================================
 
-function TileHighlight({ tile, tiles, character }) {
-  if (tile === null || tile === undefined) return null;
-  if (!character) return null;
-  const t = tiles[tile];
-  if (!t) return null;
-  const color = character === "shaolin" ? "#22c55e" : "#ff5252";
-
-  if (t.type === T.HOLE) {
-    // Trace the abyss polygon so the highlight matches its irregular shape.
+function TileHighlight({ shaolinTile, ninjaTile, tiles }) {
+  function singleRing(tile, color) {
+    if (tile === null || tile === undefined) return null;
+    const t = tiles[tile];
+    if (!t) return null;
+    if (t.type === T.HOLE) {
+      return (
+        <g pointerEvents="none">
+          <polygon points={holePolygonPoints(tile, 1.1)} fill="none" stroke={color}
+                   strokeWidth={3} opacity={0.5} strokeLinejoin="round" />
+          <polygon points={holePolygonPoints(tile)} fill="none" stroke={color}
+                   strokeWidth={3.5} strokeLinejoin="round" />
+        </g>
+      );
+    }
+    const p = tilePos(tile);
     return (
       <g pointerEvents="none">
-        <polygon
-          points={holePolygonPoints(tile, 1.1)}
-          fill="none" stroke={color} strokeWidth={3}
-          opacity={0.5} strokeLinejoin="round"
-        />
-        <polygon
-          points={holePolygonPoints(tile)}
-          fill="none" stroke={color} strokeWidth={3.5}
-          strokeLinejoin="round"
-        />
+        <rect x={p.x - 6} y={p.y - 6} width={TILE + 12} height={TILE + 12}
+              rx={12} fill="none" stroke={color} strokeWidth={2} opacity={0.45} />
+        <rect x={p.x - 3} y={p.y - 3} width={TILE + 6} height={TILE + 6}
+              rx={9} fill="none" stroke={color} strokeWidth={3} />
       </g>
     );
   }
 
-  const p = tilePos(tile);
+  const shared = (
+    shaolinTile !== null && shaolinTile !== undefined &&
+    ninjaTile   !== null && ninjaTile   !== undefined &&
+    shaolinTile === ninjaTile
+  );
+
+  if (shared) {
+    const t = tiles[shaolinTile];
+    if (t?.type === T.HOLE) return singleRing(shaolinTile, "#22c55e");
+    const p = tilePos(shaolinTile);
+    return (
+      <g pointerEvents="none">
+        {/* outer red ring (Ninja), inner green ring (Shaolin) */}
+        <rect x={p.x - 9} y={p.y - 9} width={TILE + 18} height={TILE + 18}
+              rx={14} fill="none" stroke="#ff5252" strokeWidth={3} />
+        <rect x={p.x - 3} y={p.y - 3} width={TILE + 6} height={TILE + 6}
+              rx={9}  fill="none" stroke="#22c55e" strokeWidth={3} />
+      </g>
+    );
+  }
+
   return (
-    <g pointerEvents="none">
-      <rect
-        x={p.x - 6} y={p.y - 6}
-        width={TILE + 12} height={TILE + 12}
-        rx={12} fill="none"
-        stroke={color} strokeWidth={2} opacity={0.45}
-      />
-      <rect
-        x={p.x - 3} y={p.y - 3}
-        width={TILE + 6} height={TILE + 6}
-        rx={9} fill="none"
-        stroke={color} strokeWidth={3}
-      />
+    <g>
+      {singleRing(shaolinTile, "#22c55e")}
+      {singleRing(ninjaTile,   "#ff5252")}
     </g>
   );
 }
 
-function PlayerChip({ tile, character }) {
-  if (!character) return null;
+function PlayerChip({ tile, character, sharedTile }) {
   const emoji = character === "shaolin" ? "🥋" : "🥷";
   if (tile === null) {
+    // Both chips stack in the SVG corner — visible but not on any tile yet.
+    const y = character === "shaolin" ? 2 : 22;
     return (
       <g pointerEvents="none">
-        <rect x={2} y={2} width={70} height={22} rx={5}
-              fill="#000" opacity={0.55} />
-        <text x={8} y={18} fontSize={16}>{emoji}</text>
-        <text x={28} y={17} fontSize={11} fill="#fff8e7"
-              fontFamily="sans-serif" fontWeight={700}>Start</text>
+        <rect x={2} y={y} width={24} height={18} rx={4} fill="#000" opacity={0.45} />
+        <text x={5} y={y + 14} fontSize={15}>{emoji}</text>
       </g>
     );
   }
   const p = tilePos(tile);
+  // When both players share a tile, push the Ninja chip to the bottom-right
+  // corner so neither chip covers the tile number (top-left) or labels (centre).
+  const atBottom = sharedTile && character === "ninja";
   return (
     <text
-      x={p.x + TILE - 3} y={p.y + 19}
+      x={p.x + TILE - 3}
+      y={atBottom ? p.y + TILE - 2 : p.y + 19}
       fontSize={17} textAnchor="end"
       style={{ pointerEvents: "none" }}
     >
@@ -798,7 +811,7 @@ function PathArrows({ tiles }) {
 // BOARD COMPONENT
 // =============================================================================
 
-function Board({ tiles, playerTile, character }) {
+function Board({ tiles, shaolinTile, ninjaTile, gameStarted }) {
   const ladderLinks = useMemo(() => {
     const links = [];
     for (let i = 1; i <= 64; i++) {
@@ -855,9 +868,16 @@ function Board({ tiles, playerTile, character }) {
         .filter((n) => tiles[n].type === T.HOLE)
         .map((n) => <Abyss key={`h${n}`} tile={tiles[n]} />)}
 
-      {/* Player tile highlight + chip (Phase 2) */}
-      <TileHighlight tile={playerTile} tiles={tiles} character={character} />
-      <PlayerChip tile={playerTile} character={character} />
+      {/* Player chips and tile highlights — only once game is started */}
+      {gameStarted && (
+        <g>
+          <TileHighlight shaolinTile={shaolinTile} ninjaTile={ninjaTile} tiles={tiles} />
+          <PlayerChip tile={shaolinTile} character="shaolin"
+                      sharedTile={shaolinTile !== null && shaolinTile === ninjaTile} />
+          <PlayerChip tile={ninjaTile} character="ninja"
+                      sharedTile={ninjaTile !== null && ninjaTile === shaolinTile} />
+        </g>
+      )}
     </svg>
   );
 }
@@ -975,64 +995,153 @@ function InfoPanel({ tiles, attempts, onRegenerate, isRolling }) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// =============================================================================
+// PHASE 4 — MODAL COMPONENTS
+// =============================================================================
+
+function LadderModal({ tileNum, dest, onUse, onStay }) {
+  const overlayStyle = {
+    position: "fixed", inset: 0,
+    background: "rgba(0,0,0,0.72)",
+    display: "flex", alignItems: "center", justifyContent: "center",
+    zIndex: 1000,
+  };
+  const boxStyle = {
+    background: "#fff8e7",
+    border: "2px solid #c4ad7b",
+    borderRadius: 14,
+    padding: "28px 32px",
+    maxWidth: 380,
+    width: "90%",
+    textAlign: "center",
+    boxShadow: "0 8px 40px rgba(0,0,0,0.6)",
+    fontFamily: "Georgia, serif",
+    color: PALETTE.text,
+  };
+  const btnPrimary = {
+    padding: "9px 22px", borderRadius: 7,
+    background: "#7a5500", color: "#fff8e7",
+    border: "none", fontFamily: "Georgia, serif",
+    fontSize: 14, fontWeight: 700, cursor: "pointer",
+  };
+  const btnSecondary = {
+    padding: "9px 22px", borderRadius: 7,
+    background: "#fff8e7", color: PALETTE.text,
+    border: "1px solid #c4ad7b", fontFamily: "Georgia, serif",
+    fontSize: 14, fontWeight: 600, cursor: "pointer",
+  };
+  return (
+    <div style={overlayStyle}>
+      <div style={boxStyle}>
+        <div style={{ fontSize: 40, marginBottom: 8 }}>🪜</div>
+        <h2 style={{ margin: "0 0 12px 0", fontSize: 20 }}>A Ladder!</h2>
+        <p style={{ fontStyle: "italic", fontSize: 14, lineHeight: 1.6, marginBottom: 16, color: "#6b4f1a" }}>
+          "Each rung climbed is a battle won — rise swiftly, warrior, for the summit awaits."
+        </p>
+        <div style={{
+          width: "100%", height: 160,
+          background: "#dde4cc",
+          borderRadius: 8,
+          marginBottom: 20,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          color: "#8a9a7a", fontSize: 13,
+          border: "1px solid #bbc9a8",
+        }}>
+          [Ladder illustration — placeholder]
+        </div>
+        <p style={{ fontSize: 13, marginBottom: 22, color: "#7a5500" }}>
+          This ladder leads to tile <strong>{dest}</strong>.
+          Do you climb, or hold your ground?
+        </p>
+        <div style={{ display: "flex", gap: 12, justifyContent: "center" }}>
+          <button style={btnPrimary} onClick={onUse}>Use Ladder</button>
+          <button style={btnSecondary} onClick={onStay}>Stay Here</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function ShaolinGame() {
   const [board, setBoard] = useState(() => generateBoard());
-  const [character, setCharacter] = useState(null);   // null | "shaolin" | "ninja"
-  const [playerTile, setPlayerTile] = useState(null); // null = start, else 1..64
-  const [diceValue, setDiceValue] = useState(1);
+  const [shaolinTile, setShaolinTile] = useState(null);
+  const [ninjaTile, setNinjaTile] = useState(null);
+  const [currentTurn, setCurrentTurn] = useState(null); // null | "any" | "shaolin" | "ninja"
   const [isRolling, setIsRolling] = useState(false);
+  const [modal, setModal] = useState(null); // null | { type, resolve, ...data }
 
-  function selectCharacter(c) {
+  function showModal(data) {
+    return new Promise((resolve) => {
+      setModal({ ...data, resolve });
+    });
+  }
+
+  function startGame() {
     if (isRolling) return;
-    setCharacter(c);
-    setPlayerTile(null);
+    setShaolinTile(null);
+    setNinjaTile(null);
+    setCurrentTurn("any");
   }
 
   function regenerate() {
     if (isRolling) return;
     setBoard(generateBoard());
-    setPlayerTile(null);
+    setShaolinTile(null);
+    setNinjaTile(null);
+    setCurrentTurn(null);
   }
 
-  async function rollAndMove() {
-    if (isRolling || !character) return;
+  async function rollFor(character) {
+    if (isRolling || (currentTurn !== character && currentTurn !== "any")) return;
     setIsRolling(true);
     const tiles = board.tiles;
-    let current = playerTile;
-    for (let i = 0; i < diceValue; i++) {
+    const steps = Math.floor(Math.random() * 6) + 1;
+    const setTile = character === "shaolin" ? setShaolinTile : setNinjaTile;
+    let current = character === "shaolin" ? shaolinTile : ninjaTile;
+
+    for (let i = 0; i < steps; i++) {
       let next;
       if (current === null) next = 1;
-      else if (current >= 64) next = 1; // wrap (test mode)
+      else if (current >= 64) next = 1;
       else next = current + 1;
 
       if (tiles[next].type === T.HOLE) {
-        // Animate the fall: highlight the hole tile, then (for 2-row falls)
-        // briefly highlight the path tile one row below it, then land on the
-        // destination. Each stage uses the same 0.5s pace as a normal step.
-        // Falling into a hole ends the move — any remaining dice steps are
-        // discarded (the hole itself is the turn-ender).
         const hole = tiles[next];
-        setPlayerTile(next);
+        setTile(next);
         await sleep(500);
         if (hole.fallRows === 2) {
           const { row: rOrig, col } = tileGridPos(next);
           const intermediate = gridPosToTile(rOrig + 1, col);
           if (intermediate !== null && intermediate !== hole.dest) {
-            setPlayerTile(intermediate);
+            setTile(intermediate);
             await sleep(500);
           }
         }
-        setPlayerTile(hole.dest);
+        setTile(hole.dest);
         current = hole.dest;
         break;
       }
 
-      setPlayerTile(next);
+      if (tiles[next].type === T.LADDER) {
+        setTile(next);
+        current = next;
+        await sleep(400);
+        const choice = await showModal({ type: "ladder", tileNum: next, dest: tiles[next].dest });
+        setModal(null);
+        if (choice === "use") {
+          setTile(tiles[next].dest);
+        }
+        break;
+      }
+
+      setTile(next);
       current = next;
 
-      if (i < diceValue - 1) await sleep(500);
+      if (i < steps - 1) await sleep(500);
     }
+
     setIsRolling(false);
+    setCurrentTurn(character === "shaolin" ? "ninja" : "shaolin");
   }
 
   if (!board.tiles) {
@@ -1059,6 +1168,8 @@ export default function ShaolinGame() {
     opacity: disabled ? 0.5 : 1,
   });
 
+  const gameStarted = currentTurn !== null;
+
   return (
     <div style={{
       minHeight: "100vh", padding: 20, background: "#1f1a10",
@@ -1068,8 +1179,16 @@ export default function ShaolinGame() {
         Shaolin Master vs The Shadow Clan
       </h1>
       <div style={{ fontSize: 13, opacity: 0.7, marginBottom: 16 }}>
-        Phase 2 — Movement (test mode)
+        Phase 3 — Two-player
       </div>
+
+      {!gameStarted && (
+        <div style={{ marginBottom: 16 }}>
+          <button onClick={startGame} style={{ ...btnActive, fontSize: 15, padding: "10px 24px" }}>
+            ▶ Start the Game
+          </button>
+        </div>
+      )}
 
       <div style={{
         display: "flex", gap: 16, marginBottom: 16, alignItems: "center",
@@ -1079,59 +1198,62 @@ export default function ShaolinGame() {
       }}>
         <div style={{ display: "flex", gap: 8 }}>
           <button
-            onClick={() => selectCharacter("shaolin")}
-            disabled={isRolling}
-            style={styleFor(character === "shaolin", isRolling)}
+            onClick={() => rollFor("shaolin")}
+            disabled={!gameStarted || isRolling || (currentTurn !== "shaolin" && currentTurn !== "any")}
+            style={styleFor(
+              gameStarted && (currentTurn === "shaolin" || currentTurn === "any"),
+              !gameStarted || isRolling || (currentTurn !== "shaolin" && currentTurn !== "any")
+            )}
           >
-            🥋 Play as Shaolin Master
+            {isRolling && currentTurn === "shaolin" ? "Rolling…" : "🥋 Roll for Shaolin Master"}
           </button>
           <button
-            onClick={() => selectCharacter("ninja")}
-            disabled={isRolling}
-            style={styleFor(character === "ninja", isRolling)}
+            onClick={() => rollFor("ninja")}
+            disabled={!gameStarted || isRolling || (currentTurn !== "ninja" && currentTurn !== "any")}
+            style={styleFor(
+              gameStarted && (currentTurn === "ninja" || currentTurn === "any"),
+              !gameStarted || isRolling || (currentTurn !== "ninja" && currentTurn !== "any")
+            )}
           >
-            🥷 Play as Ninja
+            {isRolling && currentTurn === "ninja" ? "Rolling…" : "🥷 Roll for Ninja"}
           </button>
         </div>
 
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <span style={{ fontSize: 13 }}>Roll value:</span>
-          <select
-            value={diceValue}
-            onChange={(e) => setDiceValue(+e.target.value)}
-            disabled={isRolling}
-            style={{ ...btn, padding: "5px 8px", cursor: isRolling ? "not-allowed" : "pointer" }}
-          >
-            {[1, 2, 3, 4, 5, 6].map((n) => (
-              <option key={n} value={n}>{n}</option>
-            ))}
-          </select>
-          <button
-            onClick={rollAndMove}
-            disabled={isRolling || !character}
-            style={styleFor(true, isRolling || !character)}
-          >
-            {isRolling ? "Rolling…" : "Roll"}
-          </button>
-        </div>
-
-        <div style={{ marginLeft: "auto", fontSize: 13 }}>
-          {character ? (
+        <div style={{ marginLeft: "auto", fontSize: 13, display: "flex", flexDirection: "column", gap: 2 }}>
+          {gameStarted ? (
             <>
-              {character === "shaolin" ? "🥋 Shaolin Master" : "🥷 Ninja"}
-              {" · "}
-              Position:{" "}
-              <strong>{playerTile === null ? "start" : `tile ${playerTile}`}</strong>
+              {currentTurn === "any" && !isRolling && (
+                <span style={{ fontStyle: "italic", marginBottom: 2 }}>Choose who goes first:</span>
+              )}
+              <span>
+                <strong style={{ color: "#22c55e" }}>🥋 Shaolin:</strong>{" "}
+                {shaolinTile === null ? "start" : `tile ${shaolinTile}`}
+                {currentTurn === "shaolin" && !isRolling && (
+                  <span style={{ marginLeft: 6, color: "#22c55e", fontWeight: 700 }}>← turn</span>
+                )}
+              </span>
+              <span>
+                <strong style={{ color: "#ff5252" }}>🥷 Ninja:</strong>{" "}
+                {ninjaTile === null ? "start" : `tile ${ninjaTile}`}
+                {currentTurn === "ninja" && !isRolling && (
+                  <span style={{ marginLeft: 6, color: "#ff5252", fontWeight: 700 }}>← turn</span>
+                )}
+              </span>
             </>
           ) : (
-            <em>Choose a character to place your chip on the board.</em>
+            <em>Press "Start the Game" to begin.</em>
           )}
         </div>
       </div>
 
       <div style={{ display: "flex", gap: 20, alignItems: "flex-start", flexWrap: "wrap" }}>
         <div style={{ flex: "1 1 auto", minWidth: 0 }}>
-          <Board tiles={board.tiles} playerTile={playerTile} character={character} />
+          <Board
+            tiles={board.tiles}
+            shaolinTile={shaolinTile}
+            ninjaTile={ninjaTile}
+            gameStarted={gameStarted}
+          />
         </div>
         <div style={{ flex: "0 0 auto" }}>
           <InfoPanel
@@ -1142,6 +1264,15 @@ export default function ShaolinGame() {
           />
         </div>
       </div>
+
+      {modal?.type === "ladder" && (
+        <LadderModal
+          tileNum={modal.tileNum}
+          dest={modal.dest}
+          onUse={() => modal.resolve("use")}
+          onStay={() => modal.resolve("stay")}
+        />
+      )}
     </div>
   );
 }
