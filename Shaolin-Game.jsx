@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react";
 import bambooBackground from "./IMAGES/Bamboo.jpg";
 
-// Eagerly import every pose image. Filenames follow the pattern
+// Eagerly import every pose image. Base poses follow the pattern
 // "{Type}-{height}-{character}.png", e.g. "Strike-high-shaolin.png".
 const POSE_IMAGE_MODULES = import.meta.glob("./IMAGES/*-*-*.png", {
   eager: true,
@@ -12,8 +12,28 @@ for (const path in POSE_IMAGE_MODULES) {
   const file = path.split("/").pop().replace(/\.png$/i, "");
   POSE_IMAGES[file.toLowerCase()] = POSE_IMAGE_MODULES[path];
 }
+
+// Extra-pose images follow the pattern
+// "Extra-{NamePart1}-{namepart2}-strike-{height}-{character}.png".
+// We key these by pose id ("thunder_dragon", "ghost_walk", etc.) so a base
+// type/height lookup can't accidentally pick the wrong file.
+const EXTRA_POSE_IMAGE_MODULES = import.meta.glob("./IMAGES/Extra-*.png", {
+  eager: true,
+  import: "default",
+});
+const EXTRA_POSE_IMAGES = {};
+for (const path in EXTRA_POSE_IMAGE_MODULES) {
+  const file = path.split("/").pop().replace(/\.png$/i, "");
+  const parts = file.split("-"); // ["Extra", "Thunder", "dragon", "strike", "high", "shaolin"]
+  if (parts.length >= 3 && parts[0].toLowerCase() === "extra") {
+    const id = `${parts[1]}_${parts[2]}`.toLowerCase();
+    EXTRA_POSE_IMAGES[id] = EXTRA_POSE_IMAGE_MODULES[path];
+  }
+}
+
 function poseImageFor(character, pose) {
   if (!pose || !character) return null;
+  if (pose.id && EXTRA_POSE_IMAGES[pose.id]) return EXTRA_POSE_IMAGES[pose.id];
   const key = `${pose.type}-${pose.height}-${character}`.toLowerCase();
   return POSE_IMAGES[key] || null;
 }
@@ -1041,6 +1061,64 @@ const BASE_POSES_NINJA = [
   { id: "wind_escape",   name: "Wind Escape",   type: "Dodge",  height: "Low"  },
 ];
 
+const EXTRA_POSES_SHAOLIN = [
+  { id: "thunder_dragon", name: "Thunder Dragon", type: "Strike", height: "High" },
+  { id: "ghost_walk",     name: "Ghost Walk",     type: "Strike", height: "Mid"  },
+  { id: "steel_lotus",    name: "Steel Lotus",    type: "Strike", height: "Low"  },
+];
+
+const EXTRA_POSES_NINJA = [
+  { id: "demon_claw",  name: "Demon Claw",  type: "Strike", height: "High" },
+  { id: "void_step",   name: "Void Step",   type: "Strike", height: "Mid"  },
+  { id: "iron_shroud", name: "Iron Shroud", type: "Strike", height: "Low"  },
+];
+
+const EXTRA_POSE_ID_SET = new Set([
+  ...EXTRA_POSES_SHAOLIN.map((p) => p.id),
+  ...EXTRA_POSES_NINJA.map((p) => p.id),
+]);
+
+// Paired backgrounds for extra poses (Shaolin + Ninja share a colour at each
+// height). Lighter tones of regal hues that still set them apart from base cards.
+const EXTRA_POSE_BG_BY_HEIGHT = {
+  High: { bg: "linear-gradient(140deg, #d6b6ed 0%, #a784cf 100%)", text: "#2a0e44" }, // soft violet
+  Mid:  { bg: "linear-gradient(140deg, #b8e3d4 0%, #82c0aa 100%)", text: "#0d3530" }, // soft jade
+  Low:  { bg: "linear-gradient(140deg, #f0c79c 0%, #d59866 100%)", text: "#4a1f0a" }, // soft bronze
+};
+
+const SORCERIES = [
+  {
+    id: "magic_powder",
+    name: "Magic Powder",
+    description: "During battle, before choosing a pose. For one round against a Fire Ninja, the player's pose wins the round automatically — no dice, no matchup calculation. Spent on use. Cannot be used against other ninja types.",
+  },
+  {
+    id: "ancient_key",
+    name: "Ancient Key",
+    description: "On landing on a fight tile. Skip the fight entirely. No battle occurs. Combat Rating unchanged. Cannot be used on the Boss tile or against the Unexpected Fight trap. Spent on use.",
+  },
+  {
+    id: "shadow_scroll",
+    name: "Shadow Scroll",
+    description: "During battle, before choosing a pose. Reveals the enemy's pose (type and height) for that round before the player commits their own choice. Spent on use.",
+  },
+  {
+    id: "iron_bell",
+    name: "Iron Bell",
+    description: "During battle, immediately after losing a round. The lost round is cancelled — no point is scored for either side and the round is replayed from pose selection. Spent on use.",
+  },
+  {
+    id: "dragon_rope",
+    name: "Dragon Rope",
+    description: "At the start of a turn, before rolling. Instead of rolling fortune sticks, the player jumps 1–4 tiles forward (random). The destination tile's landing modal opens normally. Spent on use.",
+  },
+  {
+    id: "safety_rope",
+    name: "Safety Rope",
+    description: "On landing on a hole tile. A modal asks: \"Use the Safety Rope to stay?\" Yes spends the rope and the player stays on the hole tile. No lets the player fall willingly — rope preserved.",
+  },
+];
+
 const NINJA_DESCRIPTIONS = {
   black:  "Disciplined assassin of the Shadow Clan. Defeat sends you back 2 tiles.",
   fire:   "Wild flame warrior who fights with reckless fury. Defeat sends you back 3 tiles.",
@@ -1252,6 +1330,297 @@ function FightIntroModal({ ninjaType, onFight }) {
   );
 }
 
+// ---- PlayerPanel -----------------------------------------------------------
+
+const SORCERY_ICONS = {
+  magic_powder:  "✨",
+  ancient_key:   "🗝️",
+  shadow_scroll: "📜",
+  iron_bell:     "🔔",
+  dragon_rope:   "🐉",
+  safety_rope:   "🪢",
+};
+
+function PlayerPanel({ character, label, battleLog, sorceries, extraPoses }) {
+  const accent = character === "shaolin" ? "#22c55e" : "#ff5252";
+  const wins = battleLog.filter((e) => e.outcome === "won").length;
+  const losses = battleLog.filter((e) => e.outcome === "lost").length;
+  return (
+    <div style={{
+      flex: "1 1 0",
+      minWidth: 240,
+      background: "#fff8e7",
+      border: "1px solid #c4ad7b",
+      borderRadius: 8,
+      padding: 12,
+      color: PALETTE.text,
+      fontFamily: "sans-serif",
+      fontSize: 12,
+      display: "flex",
+      flexDirection: "column",
+      gap: 10,
+    }}>
+      <div style={{
+        fontSize: 14, fontWeight: 700, color: accent,
+        borderBottom: `1px solid ${accent}`,
+        paddingBottom: 6,
+      }}>
+        {label}
+      </div>
+
+      <div>
+        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+          <strong>Battle Log</strong>
+          <span style={{ color: "#7a5d00" }}>
+            {wins}W / {losses}L
+          </span>
+        </div>
+        <div style={{
+          maxHeight: 130,
+          overflowY: "auto",
+          background: "#fdf4dc",
+          border: "1px solid #e4d3a5",
+          borderRadius: 6,
+          padding: "6px 8px",
+        }}>
+          {battleLog.length === 0 ? (
+            <em style={{ color: "#9b8050" }}>No battles yet</em>
+          ) : (
+            battleLog.map((entry, i) => {
+              const won = entry.outcome === "won";
+              return (
+                <div key={i} style={{
+                  display: "flex", justifyContent: "space-between",
+                  padding: "2px 0",
+                  borderBottom: i < battleLog.length - 1 ? "1px dashed #e4d3a5" : "none",
+                }}>
+                  <span>{NINJA[entry.ninjaType].name}</span>
+                  <span style={{ color: won ? "#1c6f2c" : "#a8261b", fontWeight: 600 }}>
+                    {won ? "Victory" : "Defeat"}
+                  </span>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
+
+      <div>
+        <strong>Sorceries</strong>
+        <div style={{
+          marginTop: 4,
+          background: "#fdf4dc",
+          border: "1px solid #e4d3a5",
+          borderRadius: 6,
+          padding: "6px 8px",
+          minHeight: 36,
+        }}>
+          {sorceries.length === 0 ? (
+            <em style={{ color: "#9b8050" }}>No sorceries</em>
+          ) : (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {sorceries.map((s, i) => (
+                <span
+                  key={s.id + "_" + i}
+                  title={s.description}
+                  style={{
+                    background: "#fff8e7",
+                    border: "1px solid #c4ad7b",
+                    borderRadius: 12,
+                    padding: "3px 9px",
+                    fontSize: 12,
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {SORCERY_ICONS[s.id] || "🔮"} {s.name}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div>
+        <strong>Secret Techniques</strong>
+        <div style={{
+          marginTop: 4,
+          background: "#fdf4dc",
+          border: "1px solid #e4d3a5",
+          borderRadius: 6,
+          padding: "6px 8px",
+          minHeight: 36,
+        }}>
+          {extraPoses.length === 0 ? (
+            <em style={{ color: "#9b8050" }}>No extra poses</em>
+          ) : (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {extraPoses.map((p, i) => {
+                const tone = EXTRA_POSE_BG_BY_HEIGHT[p.height];
+                const thumb = EXTRA_POSE_IMAGES[p.id];
+                return (
+                  <span
+                    key={p.id + "_" + i}
+                    title={`${p.type} / ${p.height}`}
+                    style={{
+                      background: tone ? tone.bg : "#fff8e7",
+                      color: tone ? tone.text : PALETTE.text,
+                      border: "1px solid rgba(212,175,55,0.8)",
+                      borderRadius: 12,
+                      padding: "2px 8px 2px 4px",
+                      fontSize: 12,
+                      whiteSpace: "nowrap",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 5,
+                    }}
+                  >
+                    {thumb ? (
+                      <img
+                        src={thumb}
+                        alt=""
+                        style={{
+                          width: 22, height: 22,
+                          objectFit: "contain",
+                          borderRadius: 3,
+                          background: "rgba(255,255,255,0.85)",
+                        }}
+                      />
+                    ) : (
+                      <span style={{ fontSize: 13 }}>✦</span>
+                    )}
+                    {p.name}
+                  </span>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---- ItemModal -------------------------------------------------------------
+// variant: "depleted" | "none" | "found"
+// For "found": pass `item` with shape:
+//   sorcery   → { kind: "sorcery", id, name, description }
+//   extra pose → { kind: "extra_pose", id, name, type, height }
+
+function ItemModal({ variant, item, onClose }) {
+  if (variant === "depleted") {
+    return (
+      <div style={MODAL_OVERLAY}>
+        <div style={{ ...MODAL_BOX, maxWidth: 400, width: "90%" }}>
+          <div style={{ fontSize: 38, marginBottom: 8 }}>🧰</div>
+          <h2 style={{ margin: "0 0 12px 0", fontSize: 19 }}>An Item Cache</h2>
+          <p style={{ fontSize: 14, lineHeight: 1.55, marginBottom: 22, color: "#5a4317" }}>
+            You have already searched this place. Nothing remains for you.
+          </p>
+          <button style={BTN_PRIMARY} onClick={onClose}>Continue</button>
+        </div>
+      </div>
+    );
+  }
+  if (variant === "none") {
+    return (
+      <div style={MODAL_OVERLAY}>
+        <div style={{ ...MODAL_BOX, maxWidth: 400, width: "90%" }}>
+          <div style={{ fontSize: 38, marginBottom: 8 }}>🧰</div>
+          <h2 style={{ margin: "0 0 12px 0", fontSize: 19 }}>An Item Cache</h2>
+          <p style={{ fontSize: 14, lineHeight: 1.55, marginBottom: 22, color: "#5a4317" }}>
+            You search carefully. You already possess everything this place has to offer.
+          </p>
+          <button style={BTN_PRIMARY} onClick={onClose}>Continue</button>
+        </div>
+      </div>
+    );
+  }
+  const isSorcery = item.kind === "sorcery";
+  const extraImg = !isSorcery ? EXTRA_POSE_IMAGES[item.id] : null;
+  return (
+    <div style={MODAL_OVERLAY}>
+      <div style={{
+        ...MODAL_BOX, maxWidth: 460, width: "92%",
+        ...(!isSorcery ? {
+          border: "2px solid #d4af37",
+          boxShadow: "0 8px 40px rgba(0,0,0,0.6), 0 0 32px rgba(212,175,55,0.45)",
+        } : {}),
+      }}>
+        <div style={{
+          fontSize: 13,
+          color: isSorcery ? "#7a5500" : "#8a6f1c",
+          fontWeight: 700, marginBottom: 4, letterSpacing: 0.5,
+        }}>
+          {isSorcery ? "SORCERY FOUND" : "✦ RARE TECHNIQUE SCROLL ✦"}
+        </div>
+        <h2 style={{ margin: "0 0 12px 0", fontSize: 22 }}>{item.name}</h2>
+        {!isSorcery && extraImg ? (
+          <div style={{
+            width: "100%", height: 260,
+            background: "linear-gradient(135deg, #8b1a1a 0%, #4a0a0a 100%)",
+            borderRadius: 10,
+            marginBottom: 14,
+            border: "3px solid #d4af37",
+            boxShadow: "0 0 24px rgba(212,175,55,0.45)",
+            position: "relative",
+            overflow: "hidden",
+          }}>
+            {/* Asian-style corner brackets in gold */}
+            <span style={{ position: "absolute", top: 4,  left: 6,  color: "#d4af37", fontSize: 22, lineHeight: 1, fontFamily: "monospace" }}>┏</span>
+            <span style={{ position: "absolute", top: 4,  right: 6, color: "#d4af37", fontSize: 22, lineHeight: 1, fontFamily: "monospace" }}>┓</span>
+            <span style={{ position: "absolute", bottom: 4, left: 6,  color: "#d4af37", fontSize: 22, lineHeight: 1, fontFamily: "monospace" }}>┗</span>
+            <span style={{ position: "absolute", bottom: 4, right: 6, color: "#d4af37", fontSize: 22, lineHeight: 1, fontFamily: "monospace" }}>┛</span>
+            {/* Inner parchment panel that holds the figure */}
+            <div style={{
+              position: "absolute",
+              top: 16, left: 16, right: 16, bottom: 16,
+              background: "linear-gradient(180deg, #f5e6c8 0%, #e8d4a8 100%)",
+              borderRadius: 6,
+              border: "1px solid #d4af37",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              overflow: "hidden",
+            }}>
+              <img
+                src={extraImg}
+                alt={item.name}
+                style={{
+                  maxWidth: "100%", maxHeight: "100%",
+                  objectFit: "contain", display: "block",
+                }}
+              />
+            </div>
+          </div>
+        ) : (
+          <div style={{
+            width: "100%", height: 160,
+            background: "#dde4cc",
+            borderRadius: 8,
+            marginBottom: 14,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            color: "#8a9a7a", fontSize: 13,
+            border: "1px solid #bbc9a8",
+          }}>
+            [{isSorcery ? "Sorcery" : "Pose scroll"} illustration — placeholder]
+          </div>
+        )}
+        {!isSorcery && (
+          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10, color: "#5a4317" }}>
+            {item.type} / {item.height}
+          </div>
+        )}
+        <p style={{ fontSize: 13, lineHeight: 1.6, marginBottom: 22, color: "#5a4317", fontStyle: "italic" }}>
+          {isSorcery
+            ? item.description
+            : "A secret technique scroll. This move has been added to your arsenal."}
+        </p>
+        <button style={BTN_PRIMARY} onClick={onClose}>Pick Up</button>
+      </div>
+    </div>
+  );
+}
+
 // ---- FinalDuelIntroModal ---------------------------------------------------
 
 function FinalDuelIntroModal({ onBegin }) {
@@ -1287,27 +1656,32 @@ function FinalDuelIntroModal({ onBegin }) {
 
 function PoseCard({ pose, character, selected, onSelect }) {
   const img = poseImageFor(character, pose);
+  const isExtra = EXTRA_POSE_ID_SET.has(pose.id);
   const typeColors = {
     Strike: { text: "#2a1000", bg: "#E2852E" },
     Block:  { text: "#3d2f08", bg: "#FFD45A" },
     Dodge:  { text: "#1c2a08", bg: "#BBCB64" },
   };
   const SELECTION = "#22c55e";
-  const c = typeColors[pose.type];
+  const extraTone = isExtra ? EXTRA_POSE_BG_BY_HEIGHT[pose.height] : null;
+  const cardBg = extraTone ? extraTone.bg : typeColors[pose.type].bg;
+  const cardText = extraTone ? extraTone.text : typeColors[pose.type].text;
   return (
     <button
       onClick={onSelect}
       style={{
         textAlign: "center",
-        background: c.bg,
+        background: cardBg,
         border: `2px solid ${selected ? SELECTION : "transparent"}`,
         borderRadius: 10,
         padding: "8px 10px 10px 10px",
         cursor: "pointer",
         fontFamily: "Georgia, serif",
-        color: c.text,
+        color: cardText,
         minWidth: 140,
-        boxShadow: selected ? `0 0 0 3px rgba(34,197,94,0.45)` : "none",
+        boxShadow: selected
+          ? `0 0 0 3px rgba(34,197,94,0.45)`
+          : (isExtra ? "inset 0 0 0 1px rgba(212,175,55,0.55)" : "none"),
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
@@ -1331,6 +1705,7 @@ function PoseCard({ pose, character, selected, onSelect }) {
               maxHeight: "100%",
               objectFit: "contain",
               display: "block",
+              ...(isExtra ? { transform: "scale(1.2)" } : {}),
             }}
           />
         ) : (
@@ -1379,13 +1754,19 @@ function ScorePips({
   );
 }
 
-function BattleScreen({ mode = "duel", ninjaType, activeCharacter, otherCharacter, p1Label, p2Label, onResolved }) {
+function BattleScreen({
+  mode = "duel", ninjaType, activeCharacter, otherCharacter,
+  p1Label, p2Label, p1Extras = [], p2Extras = [], onResolved,
+}) {
   const isSolo = mode === "solo";
   const p1Character = activeCharacter;
   // In solo mode the opponent is always the on-tile ninja.
   const p2Character = isSolo ? "ninja" : otherCharacter;
-  const p1Poses = p1Character === "shaolin" ? BASE_POSES_SHAOLIN : BASE_POSES_NINJA;
-  const p2Poses = p2Character === "shaolin" ? BASE_POSES_SHAOLIN : BASE_POSES_NINJA;
+  const p1Poses = (p1Character === "shaolin" ? BASE_POSES_SHAOLIN : BASE_POSES_NINJA).concat(p1Extras);
+  // CPU enemies in solo mode use only the base pose set for now.
+  const p2Poses = isSolo
+    ? BASE_POSES_NINJA
+    : (p2Character === "shaolin" ? BASE_POSES_SHAOLIN : BASE_POSES_NINJA).concat(p2Extras);
 
   const [phase, setPhase] = useState("p1_choose");
   const [round, setRound] = useState(1);
@@ -1508,20 +1889,56 @@ function BattleScreen({ mode = "duel", ninjaType, activeCharacter, otherCharacte
             </div>
           )}
         </div>
-        <div style={{
-          display: "grid", gridTemplateColumns: "repeat(3, 1fr)",
-          gap: 10, marginBottom: 16,
-        }}>
-          {poses.map((pose) => (
-            <PoseCard
-              key={pose.id}
-              pose={pose}
-              character={cardCharacter}
-              selected={selecting?.id === pose.id}
-              onSelect={() => setSelecting(pose)}
-            />
-          ))}
-        </div>
+        {(() => {
+          const basePoses = poses.filter((p) => !EXTRA_POSE_ID_SET.has(p.id));
+          const extraPoses = poses.filter((p) => EXTRA_POSE_ID_SET.has(p.id));
+          return (
+            <>
+              <div style={{
+                display: "grid", gridTemplateColumns: "repeat(3, 1fr)",
+                gap: 10, marginBottom: extraPoses.length > 0 ? 14 : 16,
+              }}>
+                {basePoses.map((pose) => (
+                  <PoseCard
+                    key={pose.id}
+                    pose={pose}
+                    character={cardCharacter}
+                    selected={selecting?.id === pose.id}
+                    onSelect={() => setSelecting(pose)}
+                  />
+                ))}
+              </div>
+              {extraPoses.length > 0 && (
+                <>
+                  <div style={{
+                    display: "flex", alignItems: "center", gap: 10,
+                    marginBottom: 10,
+                    color: "#5a4317", fontSize: 13, fontWeight: 700,
+                    letterSpacing: 0.6,
+                  }}>
+                    <span style={{ flex: 1, height: 1, background: "#c4ad7b" }} />
+                    <span style={{ color: "#7a5500" }}>✦ Your Secret Techniques ✦</span>
+                    <span style={{ flex: 1, height: 1, background: "#c4ad7b" }} />
+                  </div>
+                  <div style={{
+                    display: "grid", gridTemplateColumns: "repeat(3, 1fr)",
+                    gap: 10, marginBottom: 16,
+                  }}>
+                    {extraPoses.map((pose) => (
+                      <PoseCard
+                        key={pose.id}
+                        pose={pose}
+                        character={cardCharacter}
+                        selected={selecting?.id === pose.id}
+                        onSelect={() => setSelecting(pose)}
+                      />
+                    ))}
+                  </div>
+                </>
+              )}
+            </>
+          );
+        })()}
         <button
           style={{
             ...BTN_PRIMARY,
@@ -1720,11 +2137,26 @@ export default function ShaolinGame() {
   const [modal, setModal] = useState(null); // null | { type, resolve, ...data }
   const [lastRoll, setLastRoll] = useState(null); // null | { value, character }
   const [gameWinner, setGameWinner] = useState(null); // null | "shaolin" | "ninja"
+  const [shaolinInventory, setShaolinInventory] = useState({ sorceries: [], extraPoses: [] });
+  const [ninjaInventory, setNinjaInventory] = useState({ sorceries: [], extraPoses: [] });
+  const [shaolinDepleted, setShaolinDepleted] = useState(() => new Set());
+  const [ninjaDepleted, setNinjaDepleted] = useState(() => new Set());
+  const [shaolinBattleLog, setShaolinBattleLog] = useState([]); // [{ ninjaType, outcome }]
+  const [ninjaBattleLog, setNinjaBattleLog] = useState([]);
 
   function showModal(data) {
     return new Promise((resolve) => {
       setModal({ ...data, resolve });
     });
+  }
+
+  function resetPlayerProgress() {
+    setShaolinInventory({ sorceries: [], extraPoses: [] });
+    setNinjaInventory({ sorceries: [], extraPoses: [] });
+    setShaolinDepleted(new Set());
+    setNinjaDepleted(new Set());
+    setShaolinBattleLog([]);
+    setNinjaBattleLog([]);
   }
 
   function startGame() {
@@ -1734,6 +2166,7 @@ export default function ShaolinGame() {
     setCurrentTurn("any");
     setLastRoll(null);
     setGameWinner(null);
+    resetPlayerProgress();
   }
 
   function regenerate() {
@@ -1744,6 +2177,7 @@ export default function ShaolinGame() {
     setCurrentTurn(null);
     setLastRoll(null);
     setGameWinner(null);
+    resetPlayerProgress();
   }
 
   async function rollFor(character) {
@@ -1781,8 +2215,53 @@ export default function ShaolinGame() {
         setModal(null);
         if (choice === "use") {
           setTile(t.dest);
-          return t.dest;
+          // Apply landing logic on the ladder destination (could be an item).
+          return await resolveLanding(t.dest);
         }
+        return tile;
+      }
+
+      if (t.type === T.ITEM) {
+        await sleep(400);
+        const depleted = character === "shaolin" ? shaolinDepleted : ninjaDepleted;
+        if (depleted.has(tile)) {
+          await showModal({ type: "item", variant: "depleted" });
+          setModal(null);
+          return tile;
+        }
+        const inv = character === "shaolin" ? shaolinInventory : ninjaInventory;
+        const heldSorceryIds = new Set(inv.sorceries.map((s) => s.id));
+        const availableSorceries = SORCERIES.filter((s) => !heldSorceryIds.has(s.id))
+          .map((s) => ({ kind: "sorcery", ...s }));
+        const extras = character === "shaolin" ? EXTRA_POSES_SHAOLIN : EXTRA_POSES_NINJA;
+        const heldExtraIds = new Set(inv.extraPoses.map((p) => p.id));
+        const availableExtras = extras.filter((p) => !heldExtraIds.has(p.id))
+          .map((p) => ({ kind: "extra_pose", ...p }));
+        const pool = [...availableSorceries, ...availableExtras];
+
+        if (pool.length === 0) {
+          await showModal({ type: "item", variant: "none" });
+          setModal(null);
+          return tile;
+        }
+
+        const picked = pool[Math.floor(Math.random() * pool.length)];
+        await showModal({ type: "item", variant: "found", item: picked });
+        setModal(null);
+
+        const setInv = character === "shaolin" ? setShaolinInventory : setNinjaInventory;
+        const setDepleted = character === "shaolin" ? setShaolinDepleted : setNinjaDepleted;
+        setInv((prev) => {
+          if (picked.kind === "sorcery") {
+            return { ...prev, sorceries: [...prev.sorceries, { id: picked.id, name: picked.name, description: picked.description }] };
+          }
+          return { ...prev, extraPoses: [...prev.extraPoses, { id: picked.id, name: picked.name, type: picked.type, height: picked.height }] };
+        });
+        setDepleted((prev) => {
+          const nextSet = new Set(prev);
+          nextSet.add(tile);
+          return nextSet;
+        });
         return tile;
       }
 
@@ -1791,14 +2270,18 @@ export default function ShaolinGame() {
         const ninjaType = t.ninja;
         await showModal({ type: "fight_intro", ninjaType });
         setModal(null);
+        const playerInv = character === "shaolin" ? shaolinInventory : ninjaInventory;
         const outcome = await showModal({
           type: "battle",
           mode: "solo",
           ninjaType,
           activeCharacter: character,
           otherCharacter: character === "shaolin" ? "ninja" : "shaolin",
+          p1Extras: playerInv.extraPoses,
         });
         setModal(null);
+        const setLog = character === "shaolin" ? setShaolinBattleLog : setNinjaBattleLog;
+        setLog((prev) => [...prev, { ninjaType, outcome }]);
         if (outcome === "lost") {
           const setback = NINJA_SETBACK[ninjaType];
           const target = Math.max(1, tile - setback);
@@ -1834,6 +2317,8 @@ export default function ShaolinGame() {
           ninjaType: null,
           activeCharacter: "shaolin",
           otherCharacter: "ninja",
+          p1Extras: shaolinInventory.extraPoses,
+          p2Extras: ninjaInventory.extraPoses,
         });
         setModal(null);
         setGameWinner(result === "p1" ? "shaolin" : "ninja");
@@ -1862,7 +2347,8 @@ export default function ShaolinGame() {
         setModal(null);
         if (choice === "use") {
           setTile(tiles[next].dest);
-          current = tiles[next].dest;
+          // Apply landing logic on the ladder destination (e.g. item pickup).
+          current = await resolveLanding(tiles[next].dest);
           break;
         }
         if (!isLastStep) await sleep(500);
@@ -1872,6 +2358,13 @@ export default function ShaolinGame() {
       // Fights only trigger when the final dice step lands on them —
       // passing over a fight tile mid-roll does not start a battle.
       if (t === T.FIGHT && isLastStep) {
+        current = await resolveLanding(next);
+        break;
+      }
+
+      // Items only trigger when the final dice step lands on them —
+      // passing over an item tile mid-roll does not search the cache.
+      if (t === T.ITEM && isLastStep) {
         current = await resolveLanding(next);
         break;
       }
@@ -1929,11 +2422,17 @@ export default function ShaolinGame() {
             ▶ Start the Game
           </button>
         )}
-        {gameStarted && (
-          <button onClick={regenerate} style={{ ...btn, fontSize: 13, padding: "7px 16px" }}>
-            ↺ New Game
-          </button>
-        )}
+        <button
+          onClick={regenerate}
+          disabled={isRolling}
+          style={{
+            ...btn, fontSize: 13, padding: "7px 16px",
+            cursor: isRolling ? "not-allowed" : "pointer",
+            opacity: isRolling ? 0.5 : 1,
+          }}
+        >
+          ↺ Regenerate Board
+        </button>
       </div>
 
       <div style={{
@@ -2012,14 +2511,27 @@ export default function ShaolinGame() {
             gameStarted={gameStarted}
           />
         </div>
-        <div style={{ flex: "0 0 auto" }}>
-          <InfoPanel
-            tiles={board.tiles}
-            attempts={board.attempts}
-            onRegenerate={regenerate}
-            isRolling={isRolling}
-          />
-        </div>
+        {gameStarted && (
+          <div style={{
+            flex: "0 0 auto", width: 280,
+            display: "flex", flexDirection: "column", gap: 12,
+          }}>
+            <PlayerPanel
+              character="shaolin"
+              label="🥋 Shaolin Master"
+              battleLog={shaolinBattleLog}
+              sorceries={shaolinInventory.sorceries}
+              extraPoses={shaolinInventory.extraPoses}
+            />
+            <PlayerPanel
+              character="ninja"
+              label="🥷 Ninja"
+              battleLog={ninjaBattleLog}
+              sorceries={ninjaInventory.sorceries}
+              extraPoses={ninjaInventory.extraPoses}
+            />
+          </div>
+        )}
       </div>
 
       {isGameOver && (
@@ -2087,7 +2599,16 @@ export default function ShaolinGame() {
               ? `🥷 ${NINJA[modal.ninjaType].name}`
               : (modal.otherCharacter === "shaolin" ? "🥋 Shaolin Master" : "🥷 Ninja")
           }
+          p1Extras={modal.p1Extras || []}
+          p2Extras={modal.p2Extras || []}
           onResolved={(result) => modal.resolve(result)}
+        />
+      )}
+      {modal?.type === "item" && (
+        <ItemModal
+          variant={modal.variant}
+          item={modal.item}
+          onClose={() => modal.resolve("ok")}
         />
       )}
     </div>
