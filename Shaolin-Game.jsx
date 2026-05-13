@@ -1,4 +1,22 @@
 import { useState, useMemo } from "react";
+import bambooBackground from "./IMAGES/Bamboo.jpg";
+
+// Eagerly import every pose image. Filenames follow the pattern
+// "{Type}-{height}-{character}.png", e.g. "Strike-high-shaolin.png".
+const POSE_IMAGE_MODULES = import.meta.glob("./IMAGES/*-*-*.png", {
+  eager: true,
+  import: "default",
+});
+const POSE_IMAGES = {};
+for (const path in POSE_IMAGE_MODULES) {
+  const file = path.split("/").pop().replace(/\.png$/i, "");
+  POSE_IMAGES[file.toLowerCase()] = POSE_IMAGE_MODULES[path];
+}
+function poseImageFor(character, pose) {
+  if (!pose || !character) return null;
+  const key = `${pose.type}-${pose.height}-${character}`.toLowerCase();
+  return POSE_IMAGES[key] || null;
+}
 
 // =============================================================================
 // PHASE 1 — BOARD GENERATION & RENDERING
@@ -1234,6 +1252,32 @@ function FightIntroModal({ ninjaType, onFight }) {
   );
 }
 
+// ---- FinalDuelIntroModal ---------------------------------------------------
+
+function FinalDuelIntroModal({ onBegin }) {
+  return (
+    <div style={MODAL_OVERLAY}>
+      <div style={{ ...MODAL_BOX, maxWidth: 440, width: "90%", background: "#1a1008", border: "2px solid #d4af37", color: "#f5e8c4" }}>
+        <div style={{ fontSize: 48, marginBottom: 12 }}>⚔️</div>
+        <h2 style={{ margin: "0 0 8px 0", fontSize: 22, letterSpacing: 1, color: "#d4af37" }}>
+          The rivals meet at last.
+        </h2>
+        <p style={{ fontSize: 16, fontStyle: "italic", marginBottom: 24, color: "#c4ad7b" }}>
+          The ultimate duel begins.
+        </p>
+        <div style={{ display: "flex", gap: 20, justifyContent: "center", alignItems: "center", marginBottom: 28 }}>
+          <span style={{ fontSize: 15, fontWeight: 700, color: "#22c55e" }}>🥋 Shaolin Master</span>
+          <span style={{ fontSize: 18, color: "#d4af37" }}>vs</span>
+          <span style={{ fontSize: 15, fontWeight: 700, color: "#ff5252" }}>🥷 Ninja</span>
+        </div>
+        <button style={{ ...BTN_PRIMARY, background: "#d4af37", color: "#1a1008", fontSize: 15, padding: "11px 28px" }} onClick={onBegin}>
+          Begin Duel
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ---- BattleScreen ----------------------------------------------------------
 // Best of 3 rounds. P1 = active player (rolled into the tile). P2 = the other.
 // Pose sets are tied to character ("shaolin" → SHAOLIN poses, "ninja" → NINJA poses).
@@ -1241,68 +1285,107 @@ function FightIntroModal({ ninjaType, onFight }) {
 //   p1_choose → handoff_p2 → p2_choose → reveal (with optional dice subphase)
 //   → either round_result → next round (handoff_p1 → p1_choose...) or → battle_end
 
-function PoseCard({ pose, selected, onSelect }) {
+function PoseCard({ pose, character, selected, onSelect }) {
+  const img = poseImageFor(character, pose);
   const typeColors = {
-    Strike: { bg: "#fde2dc", edge: "#b03a48", text: "#8a1c2b" },
-    Block:  { bg: "#dce7f5", edge: "#2c558a", text: "#1a3a66" },
-    Dodge:  { bg: "#e2f0d8", edge: "#3e7d34", text: "#26571e" },
+    Strike: { text: "#2a1000", bg: "#E2852E" },
+    Block:  { text: "#3d2f08", bg: "#FFD45A" },
+    Dodge:  { text: "#1c2a08", bg: "#BBCB64" },
   };
+  const SELECTION = "#22c55e";
   const c = typeColors[pose.type];
   return (
     <button
       onClick={onSelect}
       style={{
-        textAlign: "left",
+        textAlign: "center",
         background: c.bg,
-        border: selected ? `3px solid #7a5500` : `2px solid ${c.edge}`,
+        border: `2px solid ${selected ? SELECTION : "transparent"}`,
         borderRadius: 10,
-        padding: "10px 12px",
+        padding: "8px 10px 10px 10px",
         cursor: "pointer",
         fontFamily: "Georgia, serif",
         color: c.text,
         minWidth: 140,
-        boxShadow: selected ? "0 0 0 3px rgba(122,85,0,0.25)" : "none",
+        boxShadow: selected ? `0 0 0 3px rgba(34,197,94,0.45)` : "none",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        gap: 6,
       }}
     >
-      <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 4 }}>{pose.name}</div>
-      <div style={{ fontSize: 12 }}>
-        <strong>{pose.type}</strong> / {pose.height}
+      <div style={{
+        width: "100%",
+        height: 110,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        overflow: "hidden",
+      }}>
+        {img ? (
+          <img
+            src={img}
+            alt={pose.name}
+            style={{
+              maxWidth: "100%",
+              maxHeight: "100%",
+              objectFit: "contain",
+              display: "block",
+            }}
+          />
+        ) : (
+          <span style={{ fontSize: 11, color: "#999" }}>(no image)</span>
+        )}
+      </div>
+      <div>
+        <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 2 }}>{pose.name}</div>
+        <div style={{ fontSize: 12 }}>
+          <strong>{pose.type}</strong> / {pose.height}
+        </div>
       </div>
     </button>
   );
 }
 
-function ScorePips({ scores, p1Label, p2Label }) {
+function ScorePips({
+  scores, p1Label, p2Label,
+  onDark = false, nameColor = null, vsColor = null,
+  p1PipColor = "#22c55e", p2PipColor = "#ff5252",
+}) {
   const Pip = ({ filled, color }) => (
     <span style={{
       display: "inline-block", width: 14, height: 14, borderRadius: "50%",
       background: filled ? color : "transparent",
-      border: `2px solid ${color}`, marginRight: 4,
+      border: `2px solid ${color}`,
     }} />
   );
   return (
-    <div style={{ display: "flex", gap: 24, justifyContent: "center", margin: "8px 0 16px 0", fontSize: 13 }}>
-      <div>
-        <strong style={{ color: "#22c55e" }}>{p1Label}</strong>{" "}
-        <Pip filled={scores.p1 >= 1} color="#22c55e" />
-        <Pip filled={scores.p1 >= 2} color="#22c55e" />
-      </div>
-      <div>
-        <strong style={{ color: "#ff5252" }}>{p2Label}</strong>{" "}
-        <Pip filled={scores.p2 >= 1} color="#ff5252" />
-        <Pip filled={scores.p2 >= 2} color="#ff5252" />
-      </div>
+    <div style={{
+      display: "flex", gap: 12, alignItems: "center", justifyContent: "center",
+      margin: "8px 0 16px 0", fontSize: 13, flexWrap: "wrap",
+    }}>
+      <span style={{ display: "inline-flex", gap: 4 }}>
+        <Pip filled={scores.p1 >= 1} color={p1PipColor} />
+        <Pip filled={scores.p1 >= 2} color={p1PipColor} />
+      </span>
+      <strong style={{ color: nameColor || "#22c55e" }}>{p1Label}</strong>
+      <span style={{ color: vsColor || (onDark ? "#e8d2a0" : "#7a5500"), fontWeight: 700 }}>Vs.</span>
+      <strong style={{ color: nameColor || "#ff5252" }}>{p2Label}</strong>
+      <span style={{ display: "inline-flex", gap: 4 }}>
+        <Pip filled={scores.p2 >= 1} color={p2PipColor} />
+        <Pip filled={scores.p2 >= 2} color={p2PipColor} />
+      </span>
     </div>
   );
 }
 
 function BattleScreen({ mode = "duel", ninjaType, activeCharacter, otherCharacter, p1Label, p2Label, onResolved }) {
   const isSolo = mode === "solo";
-  const p1Poses = activeCharacter === "shaolin" ? BASE_POSES_SHAOLIN : BASE_POSES_NINJA;
-  // In solo mode the opponent is always the on-tile ninja → NINJA pose set.
-  const p2Poses = isSolo
-    ? BASE_POSES_NINJA
-    : (otherCharacter === "shaolin" ? BASE_POSES_SHAOLIN : BASE_POSES_NINJA);
+  const p1Character = activeCharacter;
+  // In solo mode the opponent is always the on-tile ninja.
+  const p2Character = isSolo ? "ninja" : otherCharacter;
+  const p1Poses = p1Character === "shaolin" ? BASE_POSES_SHAOLIN : BASE_POSES_NINJA;
+  const p2Poses = p2Character === "shaolin" ? BASE_POSES_SHAOLIN : BASE_POSES_NINJA;
 
   const [phase, setPhase] = useState("p1_choose");
   const [round, setRound] = useState(1);
@@ -1374,33 +1457,57 @@ function BattleScreen({ mode = "duel", ninjaType, activeCharacter, otherCharacte
   }
   function finishBattle() {
     const battleWinner = scores.p1 >= 2 ? "p1" : "p2";
-    onResolved(battleWinner === "p1" ? "won" : "lost");
+    if (isSolo) {
+      onResolved(battleWinner === "p1" ? "won" : "lost");
+    } else {
+      onResolved(battleWinner); // "p1" | "p2" — caller interprets
+    }
   }
 
-  const ninjaInfo = NINJA[ninjaType];
+  const ninjaInfo = ninjaType ? NINJA[ninjaType] : null;
 
   // ---- render helpers ----
   function chooseScreen(player, label, poses) {
     const color = player === "p1" ? "#22c55e" : "#ff5252";
+    const cardCharacter = player === "p1" ? p1Character : p2Character;
     return (
-      <div style={{ ...MODAL_BOX, maxWidth: 720, width: "94%" }}>
-        <div style={{ fontSize: 13, color: "#7a5500", marginBottom: 2 }}>
-          Round {round} of 3 — vs {ninjaInfo.name}
+      <div style={{
+        ...MODAL_BOX,
+        maxWidth: 720, width: "94%",
+        border: "2px solid #f3e6c4",
+        backgroundImage: `url(${bambooBackground})`,
+        backgroundSize: "cover",
+        backgroundPosition: "center",
+        backgroundRepeat: "no-repeat",
+      }}>
+        <div style={{
+          background: "#f3e6c4",
+          borderRadius: 10,
+          padding: "14px 18px 12px 18px",
+          marginBottom: 18,
+          color: "#1a1208",
+        }}>
+          <div style={{ fontSize: 13, color: "#1a1208", marginBottom: 4, fontWeight: 700 }}>
+            Round {round}
+          </div>
+          <ScorePips
+            scores={scores}
+            p1Label={p1Label}
+            p2Label={p2Label}
+            nameColor="#1a1208"
+            vsColor="#1a1208"
+            p1PipColor="#0a5e2a"
+            p2PipColor="#8e1620"
+          />
+          <h2 style={{ margin: "6px 0 0 0", fontSize: 18, color: "#1a1208" }}>
+            {label}, choose your pose
+          </h2>
+          {!isSolo && (
+            <div style={{ fontSize: 12, fontStyle: "italic", marginTop: 6, color: "#3a2c12" }}>
+              (other player look away)
+            </div>
+          )}
         </div>
-        <ScorePips scores={scores} p1Label={p1Label} p2Label={p2Label} />
-        <h2 style={{ margin: "0 0 4px 0", fontSize: 18, color }}>
-          {label}, choose your pose
-        </h2>
-        {!isSolo && (
-          <div style={{ fontSize: 12, fontStyle: "italic", marginBottom: 14, color: "#6b4f1a" }}>
-            (other player look away)
-          </div>
-        )}
-        {isSolo && (
-          <div style={{ fontSize: 12, fontStyle: "italic", marginBottom: 14, color: "#6b4f1a" }}>
-            facing the {NINJA[ninjaType].name}
-          </div>
-        )}
         <div style={{
           display: "grid", gridTemplateColumns: "repeat(3, 1fr)",
           gap: 10, marginBottom: 16,
@@ -1409,13 +1516,18 @@ function BattleScreen({ mode = "duel", ninjaType, activeCharacter, otherCharacte
             <PoseCard
               key={pose.id}
               pose={pose}
+              character={cardCharacter}
               selected={selecting?.id === pose.id}
               onSelect={() => setSelecting(pose)}
             />
           ))}
         </div>
         <button
-          style={{ ...BTN_PRIMARY, opacity: selecting ? 1 : 0.45, cursor: selecting ? "pointer" : "not-allowed" }}
+          style={{
+            ...BTN_PRIMARY,
+            opacity: selecting ? 1 : 0.55,
+            cursor: selecting ? "pointer" : "not-allowed",
+          }}
           onClick={player === "p1" ? confirmP1 : confirmP2}
           disabled={!selecting}
         >
@@ -1451,23 +1563,75 @@ function BattleScreen({ mode = "duel", ninjaType, activeCharacter, otherCharacte
     const winnerSide = finalWinner;
     const needsDice = outcome.winner === "dice" && !dice;
     return (
-      <div style={{ ...MODAL_BOX, maxWidth: 640, width: "94%" }}>
-        <div style={{ fontSize: 13, color: "#7a5500", marginBottom: 2 }}>
-          Round {round} of 3 — vs {ninjaInfo.name}
-        </div>
-        <ScorePips scores={scores} p1Label={p1Label} p2Label={p2Label} />
-        <h2 style={{ margin: "0 0 14px 0", fontSize: 18 }}>Reveal</h2>
-        <div style={{ display: "flex", gap: 18, justifyContent: "center", marginBottom: 14 }}>
-          <div style={{ flex: 1, maxWidth: 220 }}>
-            <div style={{ fontSize: 13, color: "#22c55e", fontWeight: 700, marginBottom: 6 }}>{p1Label}</div>
-            <PoseCard pose={p1Choice} selected={false} onSelect={() => {}} />
+      <div style={{
+        ...MODAL_BOX,
+        maxWidth: 640, width: "94%",
+        border: "2px solid #f3e6c4",
+        backgroundImage: `url(${bambooBackground})`,
+        backgroundSize: "cover",
+        backgroundPosition: "center",
+        backgroundRepeat: "no-repeat",
+      }}>
+        <div style={{
+          background: "#f3e6c4",
+          borderRadius: 10,
+          padding: "14px 18px 12px 18px",
+          marginBottom: 18,
+          color: "#1a1208",
+        }}>
+          <div style={{ fontSize: 13, color: "#1a1208", marginBottom: 4, fontWeight: 700 }}>
+            Round {round}
           </div>
-          <div style={{ alignSelf: "center", fontSize: 20, color: "#7a5500" }}>vs</div>
-          <div style={{ flex: 1, maxWidth: 220 }}>
-            <div style={{ fontSize: 13, color: "#ff5252", fontWeight: 700, marginBottom: 6 }}>{p2Label}</div>
-            <PoseCard pose={p2Choice} selected={false} onSelect={() => {}} />
-          </div>
+          <ScorePips
+            scores={scores}
+            p1Label={p1Label}
+            p2Label={p2Label}
+            nameColor="#1a1208"
+            vsColor="#1a1208"
+            p1PipColor="#0a5e2a"
+            p2PipColor="#8e1620"
+          />
+          <h2 style={{ margin: "6px 0 0 0", fontSize: 18, color: "#1a1208" }}>Reveal</h2>
         </div>
+        {(() => {
+          // Shaolin Master always on the left, Ninja always on the right.
+          // If neither side is shaolin, fall back to p1-left/p2-right.
+          const swap = p2Character === "shaolin" && p1Character !== "shaolin";
+          const leftChoice  = swap ? p2Choice  : p1Choice;
+          const rightChoice = swap ? p1Choice  : p2Choice;
+          const leftLabel   = swap ? p2Label   : p1Label;
+          const rightLabel  = swap ? p1Label   : p2Label;
+          const leftChar    = swap ? p2Character : p1Character;
+          const rightChar   = swap ? p1Character : p2Character;
+          const leftColor   = swap ? "#ff5252" : "#22c55e";
+          const rightColor  = swap ? "#22c55e" : "#ff5252";
+          const sideStyle = {
+            width: 200,
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            textAlign: "center",
+          };
+          return (
+            <div style={{
+              display: "flex",
+              gap: 24,
+              justifyContent: "center",
+              alignItems: "center",
+              marginBottom: 14,
+            }}>
+              <div style={sideStyle}>
+                <div style={{ fontSize: 13, color: leftColor, fontWeight: 700, marginBottom: 6 }}>{leftLabel}</div>
+                <PoseCard pose={leftChoice} character={leftChar} selected={false} onSelect={() => {}} />
+              </div>
+              <div style={{ fontSize: 20, color: "#7a5500", fontWeight: 700, alignSelf: "center" }}>vs</div>
+              <div style={sideStyle}>
+                <div style={{ fontSize: 13, color: rightColor, fontWeight: 700, marginBottom: 6 }}>{rightLabel}</div>
+                <PoseCard pose={rightChoice} character={rightChar} selected={false} onSelect={() => {}} />
+              </div>
+            </div>
+          );
+        })()}
         <div style={{
           background: "#f3e6c4", border: "1px dashed #c4ad7b",
           borderRadius: 8, padding: "10px 12px", fontSize: 13,
@@ -1503,6 +1667,20 @@ function BattleScreen({ mode = "duel", ninjaType, activeCharacter, otherCharacte
 
   function endScreen() {
     const battleWinner = scores.p1 >= 2 ? "p1" : "p2";
+    if (!isSolo) {
+      const winnerLabel = battleWinner === "p1" ? p1Label : p2Label;
+      return (
+        <div style={{ ...MODAL_BOX, maxWidth: 420, width: "90%" }}>
+          <div style={{ fontSize: 40, marginBottom: 8 }}>⚔️</div>
+          <h2 style={{ margin: "0 0 10px 0", fontSize: 20 }}>The Duel is Over</h2>
+          <ScorePips scores={scores} p1Label={p1Label} p2Label={p2Label} />
+          <p style={{ fontSize: 15, fontWeight: 700, marginBottom: 20, color: "#5a4317" }}>
+            {winnerLabel} wins the ultimate duel.
+          </p>
+          <button style={BTN_PRIMARY} onClick={finishBattle}>Continue</button>
+        </div>
+      );
+    }
     const won = battleWinner === "p1";
     return (
       <div style={{ ...MODAL_BOX, maxWidth: 420, width: "90%" }}>
@@ -1541,6 +1719,7 @@ export default function ShaolinGame() {
   const [isRolling, setIsRolling] = useState(false);
   const [modal, setModal] = useState(null); // null | { type, resolve, ...data }
   const [lastRoll, setLastRoll] = useState(null); // null | { value, character }
+  const [gameWinner, setGameWinner] = useState(null); // null | "shaolin" | "ninja"
 
   function showModal(data) {
     return new Promise((resolve) => {
@@ -1554,6 +1733,7 @@ export default function ShaolinGame() {
     setNinjaTile(null);
     setCurrentTurn("any");
     setLastRoll(null);
+    setGameWinner(null);
   }
 
   function regenerate() {
@@ -1563,6 +1743,7 @@ export default function ShaolinGame() {
     setNinjaTile(null);
     setCurrentTurn(null);
     setLastRoll(null);
+    setGameWinner(null);
   }
 
   async function rollFor(character) {
@@ -1644,7 +1825,19 @@ export default function ShaolinGame() {
       if (next >= 64) {
         setTile(64);
         current = 64;
-        break;
+        setIsRolling(false);
+        await showModal({ type: "final_duel_intro" });
+        setModal(null);
+        const result = await showModal({
+          type: "battle",
+          mode: "duel",
+          ninjaType: null,
+          activeCharacter: "shaolin",
+          otherCharacter: "ninja",
+        });
+        setModal(null);
+        setGameWinner(result === "p1" ? "shaolin" : "ninja");
+        return; // Game over — skip normal turn handoff
       }
 
       setTile(next);
@@ -1716,6 +1909,7 @@ export default function ShaolinGame() {
 
   const gameStarted = currentTurn !== null;
   const bossTileReached = gameStarted && (shaolinTile === 64 || ninjaTile === 64);
+  const isGameOver = gameWinner !== null;
 
   return (
     <div style={{
@@ -1729,13 +1923,18 @@ export default function ShaolinGame() {
         Phase 3 — Two-player
       </div>
 
-      {!gameStarted && (
-        <div style={{ marginBottom: 16 }}>
+      <div style={{ marginBottom: 16, display: "flex", gap: 10, flexWrap: "wrap" }}>
+        {!gameStarted && (
           <button onClick={startGame} style={{ ...btnActive, fontSize: 15, padding: "10px 24px" }}>
             ▶ Start the Game
           </button>
-        </div>
-      )}
+        )}
+        {gameStarted && (
+          <button onClick={regenerate} style={{ ...btn, fontSize: 13, padding: "7px 16px" }}>
+            ↺ New Game
+          </button>
+        )}
+      </div>
 
       <div style={{
         display: "flex", gap: 16, marginBottom: 16, alignItems: "center",
@@ -1746,10 +1945,10 @@ export default function ShaolinGame() {
         <div style={{ display: "flex", gap: 8 }}>
           <button
             onClick={() => rollFor("shaolin")}
-            disabled={!gameStarted || isRolling || bossTileReached || (currentTurn !== "shaolin" && currentTurn !== "any")}
+            disabled={!gameStarted || isRolling || bossTileReached || isGameOver || (currentTurn !== "shaolin" && currentTurn !== "any")}
             style={styleFor(
-              gameStarted && !bossTileReached && (currentTurn === "shaolin" || currentTurn === "any"),
-              !gameStarted || isRolling || bossTileReached || (currentTurn !== "shaolin" && currentTurn !== "any")
+              gameStarted && !bossTileReached && !isGameOver && (currentTurn === "shaolin" || currentTurn === "any"),
+              !gameStarted || isRolling || bossTileReached || isGameOver || (currentTurn !== "shaolin" && currentTurn !== "any")
             )}
           >
             {(() => {
@@ -1761,10 +1960,10 @@ export default function ShaolinGame() {
           </button>
           <button
             onClick={() => rollFor("ninja")}
-            disabled={!gameStarted || isRolling || bossTileReached || (currentTurn !== "ninja" && currentTurn !== "any")}
+            disabled={!gameStarted || isRolling || bossTileReached || isGameOver || (currentTurn !== "ninja" && currentTurn !== "any")}
             style={styleFor(
-              gameStarted && !bossTileReached && (currentTurn === "ninja" || currentTurn === "any"),
-              !gameStarted || isRolling || bossTileReached || (currentTurn !== "ninja" && currentTurn !== "any")
+              gameStarted && !bossTileReached && !isGameOver && (currentTurn === "ninja" || currentTurn === "any"),
+              !gameStarted || isRolling || bossTileReached || isGameOver || (currentTurn !== "ninja" && currentTurn !== "any")
             )}
           >
             {(() => {
@@ -1803,17 +2002,6 @@ export default function ShaolinGame() {
         </div>
       </div>
 
-      {bossTileReached && (
-        <div style={{
-          marginBottom: 16, padding: "12px 18px",
-          background: "#2c1a0a", border: "1px solid #d4af37",
-          borderRadius: 8, color: "#d4af37",
-          fontFamily: "Georgia, serif", fontSize: 15,
-          textAlign: "center", letterSpacing: 0.5,
-        }}>
-          The rivals meet at last. The final duel awaits.
-        </div>
-      )}
 
       <div style={{ display: "flex", gap: 20, alignItems: "flex-start", flexWrap: "wrap" }}>
         <div style={{ flex: "1 1 auto", minWidth: 0 }}>
@@ -1833,6 +2021,45 @@ export default function ShaolinGame() {
           />
         </div>
       </div>
+
+      {isGameOver && (
+        <div style={{
+          position: "fixed", inset: 0,
+          background: "rgba(0,0,0,0.90)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          zIndex: 2000, fontFamily: "Georgia, serif",
+        }}>
+          <div style={{
+            ...MODAL_BOX,
+            maxWidth: 480, width: "90%",
+            background: "#120d04",
+            border: "2px solid #d4af37",
+            color: "#f5e8c4",
+          }}>
+            <div style={{ fontSize: 52, marginBottom: 12 }}>
+              {gameWinner === "shaolin" ? "🥋" : "🥷"}
+            </div>
+            <h1 style={{ margin: "0 0 10px 0", fontSize: 22, color: "#d4af37", letterSpacing: 1 }}>
+              {gameWinner === "shaolin" ? "Shaolin Master" : "Ninja"} wins the ultimate duel.
+            </h1>
+            <p style={{ fontSize: 14, color: "#c4ad7b", marginBottom: 28 }}>
+              {gameWinner === "shaolin"
+                ? "The Shadow Clan is defeated. Peace is restored."
+                : "The Shaolin Master has fallen. Darkness prevails."}
+            </p>
+            <button
+              style={{ ...BTN_PRIMARY, background: "#d4af37", color: "#120d04", fontSize: 15, padding: "12px 28px" }}
+              onClick={regenerate}
+            >
+              ↺ Start New Game
+            </button>
+          </div>
+        </div>
+      )}
+
+      {modal?.type === "final_duel_intro" && (
+        <FinalDuelIntroModal onBegin={() => modal.resolve("begin")} />
+      )}
 
       {modal?.type === "ladder" && (
         <LadderModal
@@ -1857,7 +2084,7 @@ export default function ShaolinGame() {
           p1Label={modal.activeCharacter === "shaolin" ? "🥋 Shaolin Master" : "🥷 Ninja"}
           p2Label={
             modal.mode === "solo"
-              ? NINJA[modal.ninjaType].name
+              ? `🥷 ${NINJA[modal.ninjaType].name}`
               : (modal.otherCharacter === "shaolin" ? "🥋 Shaolin Master" : "🥷 Ninja")
           }
           onResolved={(result) => modal.resolve(result)}
