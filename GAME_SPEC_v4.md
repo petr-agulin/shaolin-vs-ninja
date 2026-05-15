@@ -77,7 +77,7 @@ Holes are gaps in the path. You fall through and land further ahead — skipping
 
 ### Trap Types
 
-Traps are hidden tile events with negative effects. A trap tile looks identical to a normal tile until landed on. When triggered, a modal announces the trap and resolves the effect before the turn ends. Four trap types exist. Each appears at most once per game. No sorcery can be used to avoid a trap in advance — only reactive sorceries that apply after the trap triggers are relevant.
+Traps are hidden tile events with negative effects. A trap tile looks identical to a normal tile until landed on. When triggered, a modal announces the trap and resolves the effect before the turn ends. Six trap types are defined. Each game, 4 are randomly selected at board generation and assigned to the 4 trap tiles — each selected type appears exactly once. No sorcery can be used to avoid a trap in advance.
 
 **Hold**
 The player loses their next turn. A visible indicator appears on their panel as a reminder. At the start of what would be their next turn, the hold resolves automatically and play passes on. If both players are simultaneously held, both skip a turn and the hold clears.
@@ -86,10 +86,19 @@ The player loses their next turn. A visible indicator appears on their panel as 
 The player must surrender one sorcery of their choice. A modal shows their current sorceries and prompts a selection. If the player holds no sorceries, no effect ("The thief finds nothing and retreats."). The surrendered sorcery is removed from the game — it does not transfer to the opponent.
 
 **Pose Theft**
-The player must surrender one acquired extra pose (secret technique) of their choice. A modal shows their extra poses and prompts a selection. If the player holds no extra poses, no effect ("The seal finds nothing to suppress."). Base poses (the standard starting set of 9) cannot be stolen. The surrendered pose is removed from the game.
+The player must surrender one acquired extra pose (secret technique) of their choice. A modal shows their extra poses and prompts a selection. If the player holds no extra poses, no 
+effect ("The seal finds nothing to suppress."). Base poses cannot be stolen. The surrendered pose is removed from the game.
 
-**Unexpected Fight**
-A ninja ambushes the player. This fight cannot be skipped with the Ancient Key sorcery — it is an ambush, not a guarded passage. The ninja type is drawn randomly from Fire Ninja, Shadow Ninja, or Demon Ninja only. The Black Ninja does not appear here. All other battle rules apply normally. The outcome of this fight affects the Combat Rating (see Combat Rating).
+**Pose Lock**
+One type of the player's standard base poses (three moves) is randomly selected and locked for their next battle only. The locked poses are visible in the pose selection screen but greyed out and unselectable. 
+After the next battle resolves (win or lose), the lock lifts automatically. Extra poses are not affected — only standard base poses can be locked.
+
+**Setback**
+The player is immediately moved back 2–4 tiles (random). The destination tile's event does not trigger — the chip simply lands there and waits for the next turn. Always has an effect regardless of inventory or battle history.
+
+**Battle Log Modifier**
+Turns a battle victory into a defeat. If the player has no battles recorded in their log yet, no effect ("There is no history here to rewrite."). If the player has at least one recorded battle, find the most recent Victory entry and change it to Defeat in the log. If all recorded battles are already Defeats, no effect.
+Note: when Combat Rating is implemented, it must be calculated dynamically from the current state of the battle log (total wins minus total defeats) rather than tracked as a running counter. This ensures the trap's log modification automatically reflects in the Combat Rating without any separate adjustment. For example: a player with 3 wins and 0 defeats has Combat Rating +3. After the trap turns one win into a defeat, the log shows 2 wins and 1 defeat, so Combat Rating recalculates to +1. If that player then reaches the final duel with this record, their dice modifier is +1 (positive, still an advantage) — the trap hurt them but did not erase all their progress.
 
 ### Balancing Constraints for Generation
 
@@ -120,10 +129,11 @@ Every generated board must satisfy all of the following:
 - At least one item tile or normal tile must exist between a hole's origin and its destination (so the skip always costs something).
 
 **Traps:**
+- At board generation, 4 trap types are randomly selected from the pool of 6 and assigned to the 4 trap tiles.
 - No trap tile within 5 tiles of the start.
 - No trap tile within 2 tiles of a fight tile.
 - No two trap tiles adjacent to each other.
-- The Unexpected Fight trap must not appear within 4 tiles of a regular fight tile.
+
 
 **Boss Approach Zone (tiles 60–63):**
 - Tiles 60–63 must all be normal tiles — no fights, no traps, no ladders, no holes. Once a player enters this zone, the path to the boss is clear.

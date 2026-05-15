@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import bambooBackground from "./IMAGES/Bamboo.jpg";
 
 // Eagerly import every pose image. Base poses follow the pattern
@@ -75,10 +75,47 @@ const NINJA = {
 };
 
 const TRAP = {
-  hold:             { name: "Hold",             short: "Hold"   },
-  sorcery_theft:    { name: "Sorcery Theft",    short: "S-Theft"},
-  pose_theft:       { name: "Pose Theft",       short: "P-Theft"},
-  unexpected_fight: { name: "Unexpected Fight", short: "Ambush" },
+  hold:                { name: "Hold",                short: "Hold"   },
+  sorcery_theft:       { name: "Sorcery Theft",       short: "S-Theft"},
+  pose_theft:          { name: "Pose Theft",          short: "P-Theft"},
+  setback:             { name: "Setback",             short: "Back"   },
+  battle_log_modifier: { name: "Battle Log Modifier", short: "Curse"  },
+  pose_lock:           { name: "Pose Lock",           short: "Lock"   },
+};
+
+const ALL_TRAP_TYPES = ["hold", "sorcery_theft", "pose_theft", "setback", "battle_log_modifier", "pose_lock"];
+
+const TRAP_INFO = {
+  hold: {
+    icon: "⛓️",
+    title: "Hold",
+    flavor: "Spectral hands seize the air around you — you cannot move on your next turn.",
+  },
+  sorcery_theft: {
+    icon: "🗝️",
+    title: "Sorcery Theft",
+    flavor: "A shadowy thief slips from the shadows, seeking what you carry.",
+  },
+  pose_theft: {
+    icon: "📜",
+    title: "Pose Theft",
+    flavor: "An ancient seal unfurls, hungry to suppress one of your secret techniques.",
+  },
+  setback: {
+    icon: "🌀",
+    title: "Setback",
+    flavor: "A sudden gust sweeps you backward along the path.",
+  },
+  battle_log_modifier: {
+    icon: "📖",
+    title: "Curse of Forgetting",
+    flavor: "A dark hex twists memory itself — your triumphs threaten to fade.",
+  },
+  pose_lock: {
+    icon: "🔒",
+    title: "Pose Lock",
+    flavor: "Iron chains bind one of your stances — it will not answer your call.",
+  },
 };
 
 const PALETTE = {
@@ -282,8 +319,9 @@ function placeHoles(tiles) {
 }
 
 function placeTraps(tiles, reserved) {
-  // 4 traps, one per type. Eligible 6..59. No within 2 of fight or hole.
-  // No two trap tiles adjacent. Unexpected_fight not within 4 of fight.
+  // 4 traps total. At generation we randomly pick 4 trap types from the pool
+  // of 6 (ALL_TRAP_TYPES) and assign one to each placed tile. Eligible 6..59.
+  // No within 2 of fight or hole. No two trap tiles adjacent.
   // Skips tiles reserved as hole landing points (must remain normal).
   const fights = [];
   const holes = [];
@@ -292,7 +330,7 @@ function placeTraps(tiles, reserved) {
     if (tiles[i].type === T.HOLE) holes.push(i);
   }
 
-  function eligibleFor(trapType, alreadyPlaced) {
+  function eligibleFor(alreadyPlaced) {
     const result = [];
     for (let i = 6; i <= 59; i++) {
       if (tiles[i].type !== T.NORMAL) continue;
@@ -304,20 +342,16 @@ function placeTraps(tiles, reserved) {
       if (bad) continue;
       for (const p of alreadyPlaced) if (Math.abs(p - i) <= 1) { bad = true; break; }
       if (bad) continue;
-      if (trapType === "unexpected_fight") {
-        for (const f of fights) if (Math.abs(f - i) <= 4) { bad = true; break; }
-        if (bad) continue;
-      }
       result.push(i);
     }
     return result;
   }
 
-  // Place unexpected_fight first (most constrained), then the rest.
-  const order = ["unexpected_fight", ...shuffle(["hold", "sorcery_theft", "pose_theft"])];
+  // Random sample of 4 trap types from the 6 available, each appearing once.
+  const selectedTypes = shuffle(ALL_TRAP_TYPES).slice(0, 4);
   const placed = [];
-  for (const trapType of order) {
-    const cand = eligibleFor(trapType, placed);
+  for (const trapType of selectedTypes) {
+    const cand = eligibleFor(placed);
     if (cand.length === 0) return false;
     const t = pick(cand);
     placed.push(t);
@@ -615,15 +649,15 @@ function TileRect({ tile }) {
   }
 
   if (tile.type === T.TRAP) {
-    // Phase 1: visible. (Spec says traps look identical to normal — will hide later.)
+    // Dev-only visibility. The actual trap type is drawn per-player at landing time,
+    // so we no longer show a fixed sub-label here.
     return (
       <g>
         <rect x={x} y={y} width={TILE} height={TILE} rx={6}
               fill={PALETTE.trap} stroke={PALETTE.trapMark} strokeWidth={1.5}
               strokeDasharray="3 2" />
         <NumBadge x={x + 5} y={y + 13} n={n} />
-        <CenteredLabel cx={cx} cy={cy - 4} text="TRAP" fill={PALETTE.trapMark} size={11} />
-        <CenteredLabel cx={cx} cy={cy + 10} text={TRAP[tile.trap].short} fill={PALETTE.trapMark} size={9} weight={600} />
+        <CenteredLabel cx={cx} cy={cy + 2} text="TRAP" fill={PALETTE.trapMark} size={12} weight={700} />
       </g>
     );
   }
@@ -1215,7 +1249,7 @@ function resolveCombat(p1Pose, p2Pose) {
 function LadderModal({ tileNum, dest, onUse, onStay }) {
   const overlayStyle = {
     position: "fixed", inset: 0,
-    background: "rgba(0,0,0,0.72)",
+    background: "rgba(0,0,0,0.42)",
     display: "flex", alignItems: "center", justifyContent: "center",
     zIndex: 1000,
   };
@@ -1245,7 +1279,7 @@ function LadderModal({ tileNum, dest, onUse, onStay }) {
   };
   return (
     <div style={overlayStyle}>
-      <div style={boxStyle}>
+      <Draggable style={boxStyle}>
         <div style={{ fontSize: 40, marginBottom: 8 }}>🪜</div>
         <h2 style={{ margin: "0 0 12px 0", fontSize: 20 }}>A Ladder!</h2>
         <p style={{ fontStyle: "italic", fontSize: 14, lineHeight: 1.6, marginBottom: 16, color: "#6b4f1a" }}>
@@ -1270,7 +1304,7 @@ function LadderModal({ tileNum, dest, onUse, onStay }) {
           <button style={btnPrimary} onClick={onUse}>Climb down</button>
           <button style={btnSecondary} onClick={onStay}>Continue forward</button>
         </div>
-      </div>
+      </Draggable>
     </div>
   );
 }
@@ -1278,10 +1312,62 @@ function LadderModal({ tileNum, dest, onUse, onStay }) {
 // ---- Shared modal styles ----------------------------------------------------
 const MODAL_OVERLAY = {
   position: "fixed", inset: 0,
-  background: "rgba(0,0,0,0.78)",
+  background: "rgba(0,0,0,0.45)",
   display: "flex", alignItems: "center", justifyContent: "center",
   zIndex: 1000,
 };
+
+// ---- Draggable wrapper -----------------------------------------------------
+// Lets the user drag a modal aside so they can read the board behind it.
+// Drag starts on any non-interactive surface inside the modal; clicks on
+// buttons / inputs / labels still register normally.
+function useDraggable() {
+  const [pos, setPos] = useState({ x: 0, y: 0 });
+  const [dragging, setDragging] = useState(false);
+
+  function onMouseDown(e) {
+    if (e.target.closest("button, input, select, textarea, label, a, [data-no-drag]")) return;
+    e.preventDefault();
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const origin = pos;
+    setDragging(true);
+
+    function onMove(ev) {
+      setPos({
+        x: origin.x + (ev.clientX - startX),
+        y: origin.y + (ev.clientY - startY),
+      });
+    }
+    function onUp() {
+      setDragging(false);
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    }
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }
+
+  return { pos, onMouseDown, dragging };
+}
+
+function Draggable({ style, children, ...rest }) {
+  const { pos, onMouseDown, dragging } = useDraggable();
+  return (
+    <div
+      onMouseDown={onMouseDown}
+      {...rest}
+      style={{
+        ...style,
+        transform: `translate(${pos.x}px, ${pos.y}px)`,
+        cursor: dragging ? "grabbing" : "grab",
+        userSelect: "none",
+      }}
+    >
+      {children}
+    </div>
+  );
+}
 const MODAL_BOX = {
   background: "#fff8e7",
   border: "2px solid #c4ad7b",
@@ -1309,7 +1395,7 @@ function FightIntroModal({ ninjaType, onFight }) {
   const info = NINJA[ninjaType];
   return (
     <div style={MODAL_OVERLAY}>
-      <div style={{ ...MODAL_BOX, maxWidth: 400, width: "90%" }}>
+      <Draggable style={{ ...MODAL_BOX, maxWidth: 400, width: "90%" }}>
         <div style={{ fontSize: 38, marginBottom: 4 }}>⚔️</div>
         <h2 style={{ margin: "0 0 6px 0", fontSize: 20 }}>An Encounter!</h2>
         <div style={{
@@ -1325,7 +1411,7 @@ function FightIntroModal({ ninjaType, onFight }) {
           {NINJA_DESCRIPTIONS[ninjaType]}
         </p>
         <button style={BTN_PRIMARY} onClick={onFight}>Fight!</button>
-      </div>
+      </Draggable>
     </div>
   );
 }
@@ -1341,7 +1427,11 @@ const SORCERY_ICONS = {
   safety_rope:   "🪢",
 };
 
-function PlayerPanel({ character, label, battleLog, sorceries, extraPoses }) {
+function PlayerPanel({
+  character, label, battleLog, sorceries, extraPoses,
+  held = false, lockedType = null,
+}) {
+  const hasCurse = held || lockedType != null;
   const accent = character === "shaolin" ? "#22c55e" : "#ff5252";
   const wins = battleLog.filter((e) => e.outcome === "won").length;
   const losses = battleLog.filter((e) => e.outcome === "lost").length;
@@ -1366,6 +1456,52 @@ function PlayerPanel({ character, label, battleLog, sorceries, extraPoses }) {
         paddingBottom: 6,
       }}>
         {label}
+      </div>
+
+      <div>
+        <strong>Active Curses</strong>
+        <div style={{
+          marginTop: 4,
+          background: hasCurse ? "#1a0f08" : "#fdf4dc",
+          border: hasCurse ? "1px solid #4a2718" : "1px solid #e4d3a5",
+          borderRadius: 6,
+          padding: "6px 8px",
+          minHeight: 36,
+          color: hasCurse ? "#f5e6c8" : "#9b8050",
+        }}>
+          {!hasCurse ? (
+            <em>No darkness clings to you.</em>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {held && (
+                <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+                  <span style={{ fontSize: 18, lineHeight: 1.2 }}>⛓</span>
+                  <div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: "#e8d2a0", letterSpacing: 0.4 }}>
+                      Held in Place
+                    </div>
+                    <div style={{ fontSize: 11, color: "#c4ad7b", fontStyle: "italic", lineHeight: 1.4 }}>
+                      Spectral chains bind your feet — your next turn fades to silence.
+                    </div>
+                  </div>
+                </div>
+              )}
+              {lockedType && (
+                <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+                  <span style={{ fontSize: 18, lineHeight: 1.2 }}>🔒</span>
+                  <div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: "#e8d2a0", letterSpacing: 0.4 }}>
+                      Seal of {lockedType}
+                    </div>
+                    <div style={{ fontSize: 11, color: "#c4ad7b", fontStyle: "italic", lineHeight: 1.4 }}>
+                      Your {lockedType} stances slumber in iron — they will not wake until the next battle ends.
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       <div>
@@ -1500,6 +1636,163 @@ function PlayerPanel({ character, label, battleLog, sorceries, extraPoses }) {
   );
 }
 
+// ---- Trap modals -----------------------------------------------------------
+
+function TrapAnnounceModal({ trapType, message, onClose, buttonLabel = "Continue" }) {
+  const info = TRAP_INFO[trapType] || {};
+  return (
+    <div style={MODAL_OVERLAY}>
+      <Draggable style={{
+        ...MODAL_BOX, maxWidth: 420, width: "92%",
+        border: "2px solid #8a1620",
+        boxShadow: "0 8px 40px rgba(0,0,0,0.7), 0 0 24px rgba(138,22,32,0.45)",
+      }}>
+        <div style={{ fontSize: 13, color: "#8a1620", fontWeight: 700, marginBottom: 4, letterSpacing: 0.6 }}>
+          ⚠ TRAP TRIGGERED
+        </div>
+        <div style={{ fontSize: 40, marginBottom: 8 }}>{info.icon || "⚠"}</div>
+        <h2 style={{ margin: "0 0 10px 0", fontSize: 20 }}>{info.title || "Trap"}</h2>
+        <p style={{ fontSize: 13, fontStyle: "italic", lineHeight: 1.55, marginBottom: 14, color: "#6b4f1a" }}>
+          {info.flavor}
+        </p>
+        <p style={{ fontSize: 14, fontWeight: 600, lineHeight: 1.55, marginBottom: 22, color: "#5a4317" }}>
+          {message}
+        </p>
+        <button style={BTN_PRIMARY} onClick={onClose}>{buttonLabel}</button>
+      </Draggable>
+    </div>
+  );
+}
+
+function TrapSorceryTheftModal({ sorceries, onChoose }) {
+  const [selected, setSelected] = useState(null);
+  const info = TRAP_INFO.sorcery_theft;
+  return (
+    <div style={MODAL_OVERLAY}>
+      <Draggable style={{
+        ...MODAL_BOX, maxWidth: 460, width: "92%",
+        border: "2px solid #8a1620",
+        boxShadow: "0 8px 40px rgba(0,0,0,0.7), 0 0 24px rgba(138,22,32,0.45)",
+      }}>
+        <div style={{ fontSize: 13, color: "#8a1620", fontWeight: 700, marginBottom: 4, letterSpacing: 0.6 }}>
+          ⚠ TRAP TRIGGERED
+        </div>
+        <div style={{ fontSize: 40, marginBottom: 8 }}>{info.icon}</div>
+        <h2 style={{ margin: "0 0 10px 0", fontSize: 20 }}>{info.title}</h2>
+        <p style={{ fontSize: 13, fontStyle: "italic", lineHeight: 1.55, marginBottom: 14, color: "#6b4f1a" }}>
+          {info.flavor}
+        </p>
+        <p style={{ fontSize: 13, fontWeight: 600, marginBottom: 12, color: "#5a4317" }}>
+          Choose a sorcery to surrender:
+        </p>
+        <div style={{
+          display: "flex", flexWrap: "wrap", gap: 8,
+          justifyContent: "center", marginBottom: 18,
+        }}>
+          {sorceries.map((s) => (
+            <button
+              key={s.id}
+              onClick={() => setSelected(s.id)}
+              title={s.description}
+              style={{
+                background: selected === s.id ? "#fde2dc" : "#fff8e7",
+                border: selected === s.id ? "2px solid #8a1620" : "2px solid #c4ad7b",
+                borderRadius: 10,
+                padding: "8px 12px",
+                fontSize: 13,
+                fontFamily: "Georgia, serif",
+                cursor: "pointer",
+                color: PALETTE.text,
+                fontWeight: 600,
+              }}
+            >
+              {SORCERY_ICONS[s.id] || "🔮"} {s.name}
+            </button>
+          ))}
+        </div>
+        <button
+          style={{
+            ...BTN_PRIMARY,
+            opacity: selected ? 1 : 0.55,
+            cursor: selected ? "pointer" : "not-allowed",
+          }}
+          disabled={!selected}
+          onClick={() => onChoose(selected)}
+        >
+          Surrender chosen sorcery
+        </button>
+      </Draggable>
+    </div>
+  );
+}
+
+function TrapPoseTheftModal({ poses, onChoose }) {
+  const [selected, setSelected] = useState(null);
+  const info = TRAP_INFO.pose_theft;
+  return (
+    <div style={MODAL_OVERLAY}>
+      <Draggable style={{
+        ...MODAL_BOX, maxWidth: 480, width: "92%",
+        border: "2px solid #8a1620",
+        boxShadow: "0 8px 40px rgba(0,0,0,0.7), 0 0 24px rgba(138,22,32,0.45)",
+      }}>
+        <div style={{ fontSize: 13, color: "#8a1620", fontWeight: 700, marginBottom: 4, letterSpacing: 0.6 }}>
+          ⚠ TRAP TRIGGERED
+        </div>
+        <div style={{ fontSize: 40, marginBottom: 8 }}>{info.icon}</div>
+        <h2 style={{ margin: "0 0 10px 0", fontSize: 20 }}>{info.title}</h2>
+        <p style={{ fontSize: 13, fontStyle: "italic", lineHeight: 1.55, marginBottom: 14, color: "#6b4f1a" }}>
+          {info.flavor}
+        </p>
+        <p style={{ fontSize: 13, fontWeight: 600, marginBottom: 12, color: "#5a4317" }}>
+          Choose an extra pose to surrender:
+        </p>
+        <div style={{
+          display: "flex", flexWrap: "wrap", gap: 8,
+          justifyContent: "center", marginBottom: 18,
+        }}>
+          {poses.map((p) => {
+            const tone = EXTRA_POSE_BG_BY_HEIGHT[p.height];
+            const isSel = selected === p.id;
+            return (
+              <button
+                key={p.id}
+                onClick={() => setSelected(p.id)}
+                title={`${p.type} / ${p.height}`}
+                style={{
+                  background: tone ? tone.bg : "#fff8e7",
+                  color: tone ? tone.text : PALETTE.text,
+                  border: isSel ? "2px solid #8a1620" : "2px solid rgba(212,175,55,0.7)",
+                  borderRadius: 10,
+                  padding: "8px 12px",
+                  fontSize: 13,
+                  fontFamily: "Georgia, serif",
+                  cursor: "pointer",
+                  fontWeight: 700,
+                  boxShadow: isSel ? "0 0 0 3px rgba(138,22,32,0.4)" : "none",
+                }}
+              >
+                ✦ {p.name}
+              </button>
+            );
+          })}
+        </div>
+        <button
+          style={{
+            ...BTN_PRIMARY,
+            opacity: selected ? 1 : 0.55,
+            cursor: selected ? "pointer" : "not-allowed",
+          }}
+          disabled={!selected}
+          onClick={() => onChoose(selected)}
+        >
+          Surrender chosen pose
+        </button>
+      </Draggable>
+    </div>
+  );
+}
+
 // ---- ItemModal -------------------------------------------------------------
 // variant: "depleted" | "none" | "found"
 // For "found": pass `item` with shape:
@@ -1510,28 +1803,28 @@ function ItemModal({ variant, item, onClose }) {
   if (variant === "depleted") {
     return (
       <div style={MODAL_OVERLAY}>
-        <div style={{ ...MODAL_BOX, maxWidth: 400, width: "90%" }}>
+        <Draggable style={{ ...MODAL_BOX, maxWidth: 400, width: "90%" }}>
           <div style={{ fontSize: 38, marginBottom: 8 }}>🧰</div>
           <h2 style={{ margin: "0 0 12px 0", fontSize: 19 }}>An Item Cache</h2>
           <p style={{ fontSize: 14, lineHeight: 1.55, marginBottom: 22, color: "#5a4317" }}>
             You have already searched this place. Nothing remains for you.
           </p>
           <button style={BTN_PRIMARY} onClick={onClose}>Continue</button>
-        </div>
+        </Draggable>
       </div>
     );
   }
   if (variant === "none") {
     return (
       <div style={MODAL_OVERLAY}>
-        <div style={{ ...MODAL_BOX, maxWidth: 400, width: "90%" }}>
+        <Draggable style={{ ...MODAL_BOX, maxWidth: 400, width: "90%" }}>
           <div style={{ fontSize: 38, marginBottom: 8 }}>🧰</div>
           <h2 style={{ margin: "0 0 12px 0", fontSize: 19 }}>An Item Cache</h2>
           <p style={{ fontSize: 14, lineHeight: 1.55, marginBottom: 22, color: "#5a4317" }}>
             You search carefully. You already possess everything this place has to offer.
           </p>
           <button style={BTN_PRIMARY} onClick={onClose}>Continue</button>
-        </div>
+        </Draggable>
       </div>
     );
   }
@@ -1539,7 +1832,7 @@ function ItemModal({ variant, item, onClose }) {
   const extraImg = !isSorcery ? EXTRA_POSE_IMAGES[item.id] : null;
   return (
     <div style={MODAL_OVERLAY}>
-      <div style={{
+      <Draggable style={{
         ...MODAL_BOX, maxWidth: 460, width: "92%",
         ...(!isSorcery ? {
           border: "2px solid #d4af37",
@@ -1616,7 +1909,7 @@ function ItemModal({ variant, item, onClose }) {
             : "A secret technique scroll. This move has been added to your arsenal."}
         </p>
         <button style={BTN_PRIMARY} onClick={onClose}>Pick Up</button>
-      </div>
+      </Draggable>
     </div>
   );
 }
@@ -1626,7 +1919,7 @@ function ItemModal({ variant, item, onClose }) {
 function FinalDuelIntroModal({ onBegin }) {
   return (
     <div style={MODAL_OVERLAY}>
-      <div style={{ ...MODAL_BOX, maxWidth: 440, width: "90%", background: "#1a1008", border: "2px solid #d4af37", color: "#f5e8c4" }}>
+      <Draggable style={{ ...MODAL_BOX, maxWidth: 440, width: "90%", background: "#1a1008", border: "2px solid #d4af37", color: "#f5e8c4" }}>
         <div style={{ fontSize: 48, marginBottom: 12 }}>⚔️</div>
         <h2 style={{ margin: "0 0 8px 0", fontSize: 22, letterSpacing: 1, color: "#d4af37" }}>
           The rivals meet at last.
@@ -1642,7 +1935,7 @@ function FinalDuelIntroModal({ onBegin }) {
         <button style={{ ...BTN_PRIMARY, background: "#d4af37", color: "#1a1008", fontSize: 15, padding: "11px 28px" }} onClick={onBegin}>
           Begin Duel
         </button>
-      </div>
+      </Draggable>
     </div>
   );
 }
@@ -1654,7 +1947,7 @@ function FinalDuelIntroModal({ onBegin }) {
 //   p1_choose → handoff_p2 → p2_choose → reveal (with optional dice subphase)
 //   → either round_result → next round (handoff_p1 → p1_choose...) or → battle_end
 
-function PoseCard({ pose, character, selected, onSelect }) {
+function PoseCard({ pose, character, selected, onSelect, locked = false }) {
   const img = poseImageFor(character, pose);
   const isExtra = EXTRA_POSE_ID_SET.has(pose.id);
   const typeColors = {
@@ -1669,13 +1962,15 @@ function PoseCard({ pose, character, selected, onSelect }) {
   return (
     <button
       onClick={onSelect}
+      disabled={locked}
+      aria-disabled={locked}
       style={{
         textAlign: "center",
         background: cardBg,
         border: `2px solid ${selected ? SELECTION : "transparent"}`,
         borderRadius: 10,
         padding: "8px 10px 10px 10px",
-        cursor: "pointer",
+        cursor: locked ? "not-allowed" : "pointer",
         fontFamily: "Georgia, serif",
         color: cardText,
         minWidth: 140,
@@ -1686,8 +1981,34 @@ function PoseCard({ pose, character, selected, onSelect }) {
         flexDirection: "column",
         alignItems: "center",
         gap: 6,
+        position: "relative",
+        filter: locked ? "grayscale(0.85) brightness(0.78)" : "none",
+        opacity: locked ? 0.85 : 1,
       }}
     >
+      {locked && (
+        <>
+          <div style={{
+            position: "absolute", inset: 0,
+            background: "rgba(20, 14, 6, 0.35)",
+            borderRadius: 10,
+            zIndex: 2,
+            pointerEvents: "none",
+          }} />
+          <div style={{
+            position: "absolute", top: 6, right: 6,
+            fontSize: 22, zIndex: 3,
+            textShadow: "0 0 6px rgba(0,0,0,0.65)",
+          }}>💀</div>
+          <div style={{
+            position: "absolute", bottom: 6, left: 0, right: 0,
+            textAlign: "center",
+            fontSize: 11, fontWeight: 700, letterSpacing: 0.7,
+            color: "#fff", zIndex: 3,
+            textShadow: "0 1px 3px rgba(0,0,0,0.85)",
+          }}>SEALED</div>
+        </>
+      )}
       <div style={{
         width: "100%",
         height: 110,
@@ -1756,7 +2077,9 @@ function ScorePips({
 
 function BattleScreen({
   mode = "duel", ninjaType, activeCharacter, otherCharacter,
-  p1Label, p2Label, p1Extras = [], p2Extras = [], onResolved,
+  p1Label, p2Label, p1Extras = [], p2Extras = [],
+  p1LockedType = null, p2LockedType = null,
+  onResolved,
 }) {
   const isSolo = mode === "solo";
   const p1Character = activeCharacter;
@@ -1851,8 +2174,9 @@ function BattleScreen({
   function chooseScreen(player, label, poses) {
     const color = player === "p1" ? "#22c55e" : "#ff5252";
     const cardCharacter = player === "p1" ? p1Character : p2Character;
+    const lockedType = player === "p1" ? p1LockedType : p2LockedType;
     return (
-      <div style={{
+      <Draggable style={{
         ...MODAL_BOX,
         maxWidth: 720, width: "94%",
         border: "2px solid #f3e6c4",
@@ -1898,15 +2222,22 @@ function BattleScreen({
                 display: "grid", gridTemplateColumns: "repeat(3, 1fr)",
                 gap: 10, marginBottom: extraPoses.length > 0 ? 14 : 16,
               }}>
-                {basePoses.map((pose) => (
-                  <PoseCard
-                    key={pose.id}
-                    pose={pose}
-                    character={cardCharacter}
-                    selected={selecting?.id === pose.id}
-                    onSelect={() => setSelecting(pose)}
-                  />
-                ))}
+                {basePoses.map((pose) => {
+                  const isLocked = lockedType != null && pose.type === lockedType;
+                  return (
+                    <PoseCard
+                      key={pose.id}
+                      pose={pose}
+                      character={cardCharacter}
+                      selected={selecting?.id === pose.id}
+                      locked={isLocked}
+                      onSelect={() => {
+                        if (isLocked) return;
+                        setSelecting(pose);
+                      }}
+                    />
+                  );
+                })}
               </div>
               {extraPoses.length > 0 && (
                 <>
@@ -1930,6 +2261,7 @@ function BattleScreen({
                         pose={pose}
                         character={cardCharacter}
                         selected={selecting?.id === pose.id}
+                        locked={false}
                         onSelect={() => setSelecting(pose)}
                       />
                     ))}
@@ -1952,14 +2284,14 @@ function BattleScreen({
             ? (isSolo ? "Confirm pose" : "I have chosen — pass to other player")
             : "Reveal"}
         </button>
-      </div>
+      </Draggable>
     );
   }
 
   function handoffScreen(toPlayer, label) {
     const color = toPlayer === "p1" ? "#22c55e" : "#ff5252";
     return (
-      <div style={{ ...MODAL_BOX, maxWidth: 420, width: "90%" }}>
+      <Draggable style={{ ...MODAL_BOX, maxWidth: 420, width: "90%" }}>
         <div style={{ fontSize: 13, color: "#7a5500", marginBottom: 6 }}>
           Round {round} of 3
         </div>
@@ -1972,7 +2304,7 @@ function BattleScreen({
         <button style={BTN_PRIMARY} onClick={() => readyFor(toPlayer)}>
           I am ready
         </button>
-      </div>
+      </Draggable>
     );
   }
 
@@ -1980,7 +2312,7 @@ function BattleScreen({
     const winnerSide = finalWinner;
     const needsDice = outcome.winner === "dice" && !dice;
     return (
-      <div style={{
+      <Draggable style={{
         ...MODAL_BOX,
         maxWidth: 640, width: "94%",
         border: "2px solid #f3e6c4",
@@ -2078,7 +2410,7 @@ function BattleScreen({
             </button>
           </>
         )}
-      </div>
+      </Draggable>
     );
   }
 
@@ -2087,7 +2419,7 @@ function BattleScreen({
     if (!isSolo) {
       const winnerLabel = battleWinner === "p1" ? p1Label : p2Label;
       return (
-        <div style={{ ...MODAL_BOX, maxWidth: 420, width: "90%" }}>
+        <Draggable style={{ ...MODAL_BOX, maxWidth: 420, width: "90%" }}>
           <div style={{ fontSize: 40, marginBottom: 8 }}>⚔️</div>
           <h2 style={{ margin: "0 0 10px 0", fontSize: 20 }}>The Duel is Over</h2>
           <ScorePips scores={scores} p1Label={p1Label} p2Label={p2Label} />
@@ -2095,12 +2427,12 @@ function BattleScreen({
             {winnerLabel} wins the ultimate duel.
           </p>
           <button style={BTN_PRIMARY} onClick={finishBattle}>Continue</button>
-        </div>
+        </Draggable>
       );
     }
     const won = battleWinner === "p1";
     return (
-      <div style={{ ...MODAL_BOX, maxWidth: 420, width: "90%" }}>
+      <Draggable style={{ ...MODAL_BOX, maxWidth: 420, width: "90%" }}>
         <div style={{ fontSize: 40, marginBottom: 8 }}>{won ? "🏆" : "💀"}</div>
         <h2 style={{ margin: "0 0 10px 0", fontSize: 20 }}>
           {won ? "Victory!" : "Defeat"}
@@ -2112,7 +2444,7 @@ function BattleScreen({
             : `${p1Label} is bested by the ${ninjaInfo.name} and falls back ${NINJA_SETBACK[ninjaType]} tile${NINJA_SETBACK[ninjaType] === 1 ? "" : "s"}.`}
         </p>
         <button style={BTN_PRIMARY} onClick={finishBattle}>Continue</button>
-      </div>
+      </Draggable>
     );
   }
 
@@ -2143,12 +2475,52 @@ export default function ShaolinGame() {
   const [ninjaDepleted, setNinjaDepleted] = useState(() => new Set());
   const [shaolinBattleLog, setShaolinBattleLog] = useState([]); // [{ ninjaType, outcome }]
   const [ninjaBattleLog, setNinjaBattleLog] = useState([]);
+  const [shaolinHeld, setShaolinHeld] = useState(false);
+  const [ninjaHeld, setNinjaHeld] = useState(false);
+  const [shaolinLockedType, setShaolinLockedType] = useState(null); // "Strike" | "Block" | "Dodge" | null
+  const [ninjaLockedType, setNinjaLockedType] = useState(null);
+  // Each player draws traps from their OWN shuffled deck of 4 (out of 6)
+  // and tracks which trap tiles they have personally triggered.
+  const [shaolinTrapDeck, setShaolinTrapDeck] = useState([]);
+  const [ninjaTrapDeck, setNinjaTrapDeck] = useState([]);
+  const [shaolinTrappedTiles, setShaolinTrappedTiles] = useState(() => new Set());
+  const [ninjaTrappedTiles, setNinjaTrappedTiles] = useState(() => new Set());
+  const [skipNotice, setSkipNotice] = useState(null); // transient "turn skipped" banner
+  const [forcedRoll, setForcedRoll] = useState(null); // testing: null = random, else 1..6
 
   function showModal(data) {
     return new Promise((resolve) => {
       setModal({ ...data, resolve });
     });
   }
+
+  // Auto-skip held players when their turn comes around.
+  useEffect(() => {
+    if (isRolling || modal) return;
+    if (currentTurn !== "shaolin" && currentTurn !== "ninja") return;
+    const isShaolin = currentTurn === "shaolin";
+    const currentHeld = isShaolin ? shaolinHeld : ninjaHeld;
+    const otherHeld = isShaolin ? ninjaHeld : shaolinHeld;
+    if (!currentHeld) return;
+    if (otherHeld) {
+      // Both held simultaneously: both flags clear, play resumes normally.
+      setShaolinHeld(false);
+      setNinjaHeld(false);
+      setSkipNotice("Both warriors break free of their bonds — play resumes.");
+    } else {
+      if (isShaolin) setShaolinHeld(false);
+      else setNinjaHeld(false);
+      setSkipNotice(`${isShaolin ? "🥋 Shaolin Master" : "🥷 Ninja"} is held — turn skipped.`);
+      setCurrentTurn(isShaolin ? "ninja" : "shaolin");
+    }
+  }, [currentTurn, shaolinHeld, ninjaHeld, isRolling, modal]);
+
+  // Skip notice auto-dismisses after ~2 seconds.
+  useEffect(() => {
+    if (!skipNotice) return;
+    const handle = setTimeout(() => setSkipNotice(null), 2200);
+    return () => clearTimeout(handle);
+  }, [skipNotice]);
 
   function resetPlayerProgress() {
     setShaolinInventory({ sorceries: [], extraPoses: [] });
@@ -2157,6 +2529,15 @@ export default function ShaolinGame() {
     setNinjaDepleted(new Set());
     setShaolinBattleLog([]);
     setNinjaBattleLog([]);
+    setShaolinHeld(false);
+    setNinjaHeld(false);
+    setShaolinLockedType(null);
+    setNinjaLockedType(null);
+    setShaolinTrapDeck(shuffle(ALL_TRAP_TYPES).slice(0, 4));
+    setNinjaTrapDeck(shuffle(ALL_TRAP_TYPES).slice(0, 4));
+    setShaolinTrappedTiles(new Set());
+    setNinjaTrappedTiles(new Set());
+    setSkipNotice(null);
   }
 
   function startGame() {
@@ -2184,10 +2565,25 @@ export default function ShaolinGame() {
     if (isRolling || (currentTurn !== character && currentTurn !== "any")) return;
     setIsRolling(true);
     const tiles = board.tiles;
-    const steps = Math.floor(Math.random() * 6) + 1;
+    const steps = forcedRoll != null ? forcedRoll : Math.floor(Math.random() * 6) + 1;
     setLastRoll({ value: steps, character });
     const setTile = character === "shaolin" ? setShaolinTile : setNinjaTile;
     let current = character === "shaolin" ? shaolinTile : ninjaTile;
+
+    // Per-player trap-state mirrors. We snapshot at rollFor entry and mutate
+    // locally so cascades (setback → another trap) see the up-to-date deck.
+    const trapState = {
+      shaolin: {
+        deck: [...shaolinTrapDeck],
+        triggered: new Set(shaolinTrappedTiles),
+        dirty: false,
+      },
+      ninja: {
+        deck: [...ninjaTrapDeck],
+        triggered: new Set(ninjaTrappedTiles),
+        dirty: false,
+      },
+    };
 
     // Resolves the landing event on `tile` (chip is already shown there).
     // Returns the final tile position after the event (and any cascading
@@ -2218,6 +2614,119 @@ export default function ShaolinGame() {
           // Apply landing logic on the ladder destination (could be an item).
           return await resolveLanding(t.dest);
         }
+        return tile;
+      }
+
+      if (t.type === T.TRAP) {
+        // Trap type is decided PER PLAYER at landing time, drawn from that
+        // player's personal shuffled deck. Tile.trap is ignored intentionally.
+        const playerTrap = trapState[character];
+        if (playerTrap.triggered.has(tile)) {
+          // Already sprung for this player — silent pass-through.
+          return tile;
+        }
+        if (playerTrap.deck.length === 0) {
+          // Player has exhausted their trap deck — silent pass-through.
+          return tile;
+        }
+        await sleep(400);
+        const trapType = playerTrap.deck.shift();
+        playerTrap.triggered.add(tile);
+        playerTrap.dirty = true;
+
+        if (trapType === "hold") {
+          await showModal({ type: "trap_announce", trapType, message: "You are held. Lose your next turn." });
+          setModal(null);
+          if (character === "shaolin") setShaolinHeld(true);
+          else setNinjaHeld(true);
+          return tile;
+        }
+
+        if (trapType === "sorcery_theft") {
+          const inv = character === "shaolin" ? shaolinInventory : ninjaInventory;
+          if (inv.sorceries.length === 0) {
+            await showModal({ type: "trap_announce", trapType, message: "The thief finds nothing and retreats." });
+            setModal(null);
+          } else {
+            const chosenId = await showModal({ type: "trap_sorcery_theft", sorceries: inv.sorceries });
+            setModal(null);
+            const setInv = character === "shaolin" ? setShaolinInventory : setNinjaInventory;
+            setInv((prev) => ({ ...prev, sorceries: prev.sorceries.filter((s) => s.id !== chosenId) }));
+          }
+          return tile;
+        }
+
+        if (trapType === "pose_theft") {
+          const inv = character === "shaolin" ? shaolinInventory : ninjaInventory;
+          if (inv.extraPoses.length === 0) {
+            await showModal({ type: "trap_announce", trapType, message: "The seal finds nothing to suppress." });
+            setModal(null);
+          } else {
+            const chosenId = await showModal({ type: "trap_pose_theft", poses: inv.extraPoses });
+            setModal(null);
+            const setInv = character === "shaolin" ? setShaolinInventory : setNinjaInventory;
+            setInv((prev) => ({ ...prev, extraPoses: prev.extraPoses.filter((p) => p.id !== chosenId) }));
+          }
+          return tile;
+        }
+
+        if (trapType === "setback") {
+          const amount = 2 + Math.floor(Math.random() * 3); // 2..4 inclusive
+          const target = Math.max(1, tile - amount);
+          await showModal({
+            type: "trap_announce",
+            trapType,
+            message: `You are set back ${amount} tile${amount === 1 ? "" : "s"}.`,
+          });
+          setModal(null);
+          let pos = tile;
+          while (pos > target) {
+            pos--;
+            await sleep(500);
+            setTile(pos);
+          }
+          // Apply normal landing logic on the final tile (could trigger another event).
+          return await resolveLanding(pos);
+        }
+
+        if (trapType === "battle_log_modifier") {
+          const log = character === "shaolin" ? shaolinBattleLog : ninjaBattleLog;
+          const hasWin = log.some((e) => e.outcome === "won");
+          if (!hasWin) {
+            await showModal({ type: "trap_announce", trapType, message: "The curse finds no glory to tarnish." });
+            setModal(null);
+          } else {
+            const setLog = character === "shaolin" ? setShaolinBattleLog : setNinjaBattleLog;
+            setLog((prev) => {
+              const reverseIdx = [...prev].reverse().findIndex((e) => e.outcome === "won");
+              if (reverseIdx < 0) return prev;
+              const idx = prev.length - 1 - reverseIdx;
+              return prev.map((e, i) => i === idx ? { ...e, outcome: "lost" } : e);
+            });
+            await showModal({
+              type: "trap_announce",
+              trapType,
+              message: "Your greatest recent victory has been erased from history.",
+            });
+            setModal(null);
+          }
+          return tile;
+        }
+
+        if (trapType === "pose_lock") {
+          const LOCKABLE_TYPES = ["Strike", "Block", "Dodge"];
+          const lockedTypeChoice = LOCKABLE_TYPES[Math.floor(Math.random() * LOCKABLE_TYPES.length)];
+          const setLock = character === "shaolin" ? setShaolinLockedType : setNinjaLockedType;
+          setLock(lockedTypeChoice);
+          await showModal({
+            type: "trap_announce",
+            trapType,
+            message: `All three of your ${lockedTypeChoice} stances have been sealed for your next battle.`,
+          });
+          setModal(null);
+          return tile;
+        }
+
         return tile;
       }
 
@@ -2271,6 +2780,7 @@ export default function ShaolinGame() {
         await showModal({ type: "fight_intro", ninjaType });
         setModal(null);
         const playerInv = character === "shaolin" ? shaolinInventory : ninjaInventory;
+        const playerLock = character === "shaolin" ? shaolinLockedType : ninjaLockedType;
         const outcome = await showModal({
           type: "battle",
           mode: "solo",
@@ -2278,8 +2788,12 @@ export default function ShaolinGame() {
           activeCharacter: character,
           otherCharacter: character === "shaolin" ? "ninja" : "shaolin",
           p1Extras: playerInv.extraPoses,
+          p1LockedType: playerLock,
         });
         setModal(null);
+        // The pose lock applies only to the player's next battle — clear it.
+        const setLock = character === "shaolin" ? setShaolinLockedType : setNinjaLockedType;
+        setLock(null);
         const setLog = character === "shaolin" ? setShaolinBattleLog : setNinjaBattleLog;
         setLog((prev) => [...prev, { ninjaType, outcome }]);
         if (outcome === "lost") {
@@ -2319,8 +2833,12 @@ export default function ShaolinGame() {
           otherCharacter: "ninja",
           p1Extras: shaolinInventory.extraPoses,
           p2Extras: ninjaInventory.extraPoses,
+          p1LockedType: shaolinLockedType,
+          p2LockedType: ninjaLockedType,
         });
         setModal(null);
+        setShaolinLockedType(null);
+        setNinjaLockedType(null);
         setGameWinner(result === "p1" ? "shaolin" : "ninja");
         return; // Game over — skip normal turn handoff
       }
@@ -2369,7 +2887,23 @@ export default function ShaolinGame() {
         break;
       }
 
+      // Traps trigger only when the chip actually lands — passing over a
+      // (hidden) trap tile does not spring it.
+      if (t === T.TRAP && isLastStep) {
+        current = await resolveLanding(next);
+        break;
+      }
+
       if (!isLastStep) await sleep(500);
+    }
+
+    if (trapState.shaolin.dirty) {
+      setShaolinTrapDeck(trapState.shaolin.deck);
+      setShaolinTrappedTiles(trapState.shaolin.triggered);
+    }
+    if (trapState.ninja.dirty) {
+      setNinjaTrapDeck(trapState.ninja.deck);
+      setNinjaTrappedTiles(trapState.ninja.triggered);
     }
 
     setIsRolling(false);
@@ -2435,72 +2969,17 @@ export default function ShaolinGame() {
         </button>
       </div>
 
-      <div style={{
-        display: "flex", gap: 16, marginBottom: 16, alignItems: "center",
-        flexWrap: "wrap", padding: "12px 14px", background: "#fff8e7",
-        border: "1px solid #c4ad7b", borderRadius: 8, color: PALETTE.text,
-        fontFamily: "sans-serif",
-      }}>
-        <div style={{ display: "flex", gap: 8 }}>
-          <button
-            onClick={() => rollFor("shaolin")}
-            disabled={!gameStarted || isRolling || bossTileReached || isGameOver || (currentTurn !== "shaolin" && currentTurn !== "any")}
-            style={styleFor(
-              gameStarted && !bossTileReached && !isGameOver && (currentTurn === "shaolin" || currentTurn === "any"),
-              !gameStarted || isRolling || bossTileReached || isGameOver || (currentTurn !== "shaolin" && currentTurn !== "any")
-            )}
-          >
-            {(() => {
-              const showDice = lastRoll?.character === "shaolin";
-              const dice = showDice ? ` 🎲 ${lastRoll.value}` : "";
-              if (isRolling && currentTurn === "shaolin") return `Rolling…${dice}`;
-              return `🥋 Roll for Shaolin Master${dice}`;
-            })()}
-          </button>
-          <button
-            onClick={() => rollFor("ninja")}
-            disabled={!gameStarted || isRolling || bossTileReached || isGameOver || (currentTurn !== "ninja" && currentTurn !== "any")}
-            style={styleFor(
-              gameStarted && !bossTileReached && !isGameOver && (currentTurn === "ninja" || currentTurn === "any"),
-              !gameStarted || isRolling || bossTileReached || isGameOver || (currentTurn !== "ninja" && currentTurn !== "any")
-            )}
-          >
-            {(() => {
-              const showDice = lastRoll?.character === "ninja";
-              const dice = showDice ? ` 🎲 ${lastRoll.value}` : "";
-              if (isRolling && currentTurn === "ninja") return `Rolling…${dice}`;
-              return `🥷 Roll for Ninja${dice}`;
-            })()}
-          </button>
+      {skipNotice && (
+        <div style={{
+          marginBottom: 14, padding: "10px 16px",
+          background: "#2c1a0a", border: "1px solid #8a1620",
+          borderRadius: 8, color: "#f5e6c8",
+          fontFamily: "Georgia, serif", fontSize: 14,
+          textAlign: "center", letterSpacing: 0.4,
+        }}>
+          ⛓ {skipNotice}
         </div>
-
-        <div style={{ marginLeft: "auto", fontSize: 13, display: "flex", flexDirection: "column", gap: 2 }}>
-          {gameStarted ? (
-            <>
-              {currentTurn === "any" && !isRolling && (
-                <span style={{ fontStyle: "italic", marginBottom: 2 }}>Choose who goes first:</span>
-              )}
-              <span>
-                <strong style={{ color: "#22c55e" }}>🥋 Shaolin:</strong>{" "}
-                {shaolinTile === null ? "start" : `tile ${shaolinTile}`}
-                {currentTurn === "shaolin" && !isRolling && (
-                  <span style={{ marginLeft: 6, color: "#22c55e", fontWeight: 700 }}>← turn</span>
-                )}
-              </span>
-              <span>
-                <strong style={{ color: "#ff5252" }}>🥷 Ninja:</strong>{" "}
-                {ninjaTile === null ? "start" : `tile ${ninjaTile}`}
-                {currentTurn === "ninja" && !isRolling && (
-                  <span style={{ marginLeft: 6, color: "#ff5252", fontWeight: 700 }}>← turn</span>
-                )}
-              </span>
-            </>
-          ) : (
-            <em>Press "Start the Game" to begin.</em>
-          )}
-        </div>
-      </div>
-
+      )}
 
       <div style={{ display: "flex", gap: 20, alignItems: "flex-start", flexWrap: "wrap" }}>
         <div style={{ flex: "1 1 auto", minWidth: 0 }}>
@@ -2511,6 +2990,129 @@ export default function ShaolinGame() {
             gameStarted={gameStarted}
           />
         </div>
+
+        {/* Sticky controls column — roll buttons, dev force-roll, position/turn info */}
+        <div style={{
+          flex: "0 0 auto",
+          width: 230,
+          position: "sticky",
+          top: 12,
+          alignSelf: "flex-start",
+          background: "#fff8e7",
+          border: "1px solid #c4ad7b",
+          borderRadius: 8,
+          padding: "12px 14px",
+          color: PALETTE.text,
+          fontFamily: "sans-serif",
+          fontSize: 13,
+          display: "flex",
+          flexDirection: "column",
+          gap: 10,
+        }}>
+          <button
+            onClick={() => rollFor("shaolin")}
+            disabled={!gameStarted || isRolling || bossTileReached || isGameOver || (currentTurn !== "shaolin" && currentTurn !== "any")}
+            style={{
+              ...styleFor(
+                gameStarted && !bossTileReached && !isGameOver && (currentTurn === "shaolin" || currentTurn === "any"),
+                !gameStarted || isRolling || bossTileReached || isGameOver || (currentTurn !== "shaolin" && currentTurn !== "any")
+              ),
+              width: "100%",
+              padding: "9px 10px",
+            }}
+          >
+            {(() => {
+              const showDice = lastRoll?.character === "shaolin";
+              const dice = showDice ? ` 🎲 ${lastRoll.value}` : "";
+              if (isRolling && currentTurn === "shaolin") return `Rolling…${dice}`;
+              return `🥋 Roll Shaolin Master${dice}`;
+            })()}
+          </button>
+          <button
+            onClick={() => rollFor("ninja")}
+            disabled={!gameStarted || isRolling || bossTileReached || isGameOver || (currentTurn !== "ninja" && currentTurn !== "any")}
+            style={{
+              ...styleFor(
+                gameStarted && !bossTileReached && !isGameOver && (currentTurn === "ninja" || currentTurn === "any"),
+                !gameStarted || isRolling || bossTileReached || isGameOver || (currentTurn !== "ninja" && currentTurn !== "any")
+              ),
+              width: "100%",
+              padding: "9px 10px",
+            }}
+          >
+            {(() => {
+              const showDice = lastRoll?.character === "ninja";
+              const dice = showDice ? ` 🎲 ${lastRoll.value}` : "";
+              if (isRolling && currentTurn === "ninja") return `Rolling…${dice}`;
+              return `🥷 Roll Ninja${dice}`;
+            })()}
+          </button>
+
+          <div style={{
+            display: "flex", alignItems: "center", gap: 6,
+            padding: "4px 8px",
+            background: "#fdecc8",
+            border: "1px dashed #c08b1a",
+            borderRadius: 6,
+            fontSize: 12, color: "#7a5500",
+          }} title="Testing: force the next dice roll to a specific value">
+            <span style={{ fontWeight: 700, letterSpacing: 0.4 }}>🧪 Force:</span>
+            <select
+              value={forcedRoll == null ? "" : String(forcedRoll)}
+              onChange={(e) => {
+                const v = e.target.value;
+                setForcedRoll(v === "" ? null : Number(v));
+              }}
+              style={{
+                fontFamily: "inherit", fontSize: 12,
+                padding: "2px 4px", borderRadius: 4,
+                border: "1px solid #c08b1a", background: "#fff8e7",
+                color: "#3a2c12", cursor: "pointer",
+                marginLeft: "auto",
+              }}
+            >
+              <option value="">Random</option>
+              <option value="1">1</option>
+              <option value="2">2</option>
+              <option value="3">3</option>
+              <option value="4">4</option>
+              <option value="5">5</option>
+              <option value="6">6</option>
+            </select>
+          </div>
+
+          <div style={{
+            borderTop: "1px solid #e4d3a5",
+            paddingTop: 8,
+            fontSize: 12,
+            display: "flex", flexDirection: "column", gap: 4,
+          }}>
+            {gameStarted ? (
+              <>
+                {currentTurn === "any" && !isRolling && (
+                  <span style={{ fontStyle: "italic", marginBottom: 2 }}>Choose who goes first:</span>
+                )}
+                <div>
+                  <strong style={{ color: "#22c55e" }}>🥋 Shaolin:</strong>{" "}
+                  {shaolinTile === null ? "start" : `tile ${shaolinTile}`}
+                  {currentTurn === "shaolin" && !isRolling && (
+                    <span style={{ marginLeft: 6, color: "#22c55e", fontWeight: 700 }}>← turn</span>
+                  )}
+                </div>
+                <div>
+                  <strong style={{ color: "#ff5252" }}>🥷 Ninja:</strong>{" "}
+                  {ninjaTile === null ? "start" : `tile ${ninjaTile}`}
+                  {currentTurn === "ninja" && !isRolling && (
+                    <span style={{ marginLeft: 6, color: "#ff5252", fontWeight: 700 }}>← turn</span>
+                  )}
+                </div>
+              </>
+            ) : (
+              <em>Press "Start the Game" to begin.</em>
+            )}
+          </div>
+        </div>
+
         {gameStarted && (
           <div style={{
             flex: "0 0 auto", width: 280,
@@ -2522,6 +3124,8 @@ export default function ShaolinGame() {
               battleLog={shaolinBattleLog}
               sorceries={shaolinInventory.sorceries}
               extraPoses={shaolinInventory.extraPoses}
+              held={shaolinHeld}
+              lockedType={shaolinLockedType}
             />
             <PlayerPanel
               character="ninja"
@@ -2529,6 +3133,8 @@ export default function ShaolinGame() {
               battleLog={ninjaBattleLog}
               sorceries={ninjaInventory.sorceries}
               extraPoses={ninjaInventory.extraPoses}
+              held={ninjaHeld}
+              lockedType={ninjaLockedType}
             />
           </div>
         )}
@@ -2541,7 +3147,7 @@ export default function ShaolinGame() {
           display: "flex", alignItems: "center", justifyContent: "center",
           zIndex: 2000, fontFamily: "Georgia, serif",
         }}>
-          <div style={{
+          <Draggable style={{
             ...MODAL_BOX,
             maxWidth: 480, width: "90%",
             background: "#120d04",
@@ -2565,7 +3171,7 @@ export default function ShaolinGame() {
             >
               ↺ Start New Game
             </button>
-          </div>
+          </Draggable>
         </div>
       )}
 
@@ -2601,6 +3207,8 @@ export default function ShaolinGame() {
           }
           p1Extras={modal.p1Extras || []}
           p2Extras={modal.p2Extras || []}
+          p1LockedType={modal.p1LockedType || null}
+          p2LockedType={modal.p2LockedType || null}
           onResolved={(result) => modal.resolve(result)}
         />
       )}
@@ -2609,6 +3217,25 @@ export default function ShaolinGame() {
           variant={modal.variant}
           item={modal.item}
           onClose={() => modal.resolve("ok")}
+        />
+      )}
+      {modal?.type === "trap_announce" && (
+        <TrapAnnounceModal
+          trapType={modal.trapType}
+          message={modal.message}
+          onClose={() => modal.resolve("ok")}
+        />
+      )}
+      {modal?.type === "trap_sorcery_theft" && (
+        <TrapSorceryTheftModal
+          sorceries={modal.sorceries}
+          onChoose={(id) => modal.resolve(id)}
+        />
+      )}
+      {modal?.type === "trap_pose_theft" && (
+        <TrapPoseTheftModal
+          poses={modal.poses}
+          onChoose={(id) => modal.resolve(id)}
         />
       )}
     </div>
