@@ -382,25 +382,90 @@ The Combat Rating is always visible on the player panel. It updates immediately 
 
 ## Sorceries
 
-Sorceries are single-use special items found on item tiles. They are a separate category from poses — they do not participate in combat resolution directly. They override, modify, or augment outcomes.
+Sorceries are single-use special items found on item tiles. They are a separate category from poses. All sorceries are spent (permanently removed from the player's inventory) the moment they are used, regardless of outcome. Multiple sorceries can be held simultaneously.
 
-Finding a sorcery is luck-based. Players cannot acquire them on demand. Multiple sorceries can be held simultaneously. Sorceries expire at the end of the session and can be lost via the Sorcery Theft trap.
+Finding a sorcery is luck-based. Sorceries are distributed across item tiles randomly individually per each player, from the pool of available sorceries. Players cannot acquire them on demand. Sorceries expire at the end of the session.
 
 ### Sorcery Types
 
-| Sorcery | When used | Effect |
-|---|---|---|
-| Magic Powder | During battle, before choosing a pose | For one round against a Fire Ninja, the player's pose wins the round automatically — no dice, no matchup calculation. Spent on use. Cannot be used against other ninja types. |
-| Ancient Key | On landing on a fight tile | Skip the fight entirely. No battle occurs. Combat Rating unchanged. Cannot be used on the Boss tile or against the Unexpected Fight trap. Spent on use. |
-| Shadow Scroll | During battle, before choosing a pose | Reveals the enemy's pose (type and height) for that round before the player commits their own choice. Spent on use. |
-| Iron Bell | During battle, immediately after losing a round | The lost round is cancelled — no point is scored for either side and the round is replayed from pose selection. Spent on use. |
-| Dragon Rope | At the start of a turn, before rolling | Instead of rolling fortune sticks, the player jumps 1–4 tiles forward (random). The destination tile's landing modal opens normally. Spent on use. |
-| Safety Rope | On landing on a hole tile | A modal asks: "Use the Safety Rope to stay?" Yes spends the rope and the player stays on the hole tile. No lets the player fall willingly — rope preserved. |
+### Mantle of Mist
+**Type:** Board — triggered by the game, player decides to use or not.
 
-### Balance Principles
+When a player lands on a fight tile, before the fight modal opens, the game checks if the player holds this sorcery. If yes, the game asks: "You hold the Mantle of Mist. Slip past unseen?" The player chooses Yes or No. The player must see which enemy type they met. Yes spends the sorcery and skips the fight entirely — no battle occurs, no Combat Rating change, turn ends normally. No preserves the sorcery and the fight proceeds (fight modal opens). Cannot be used on the boss tile (tile 64).
 
-- No sorcery guarantees a win. Each only removes one obstacle or shifts odds in one situation.
-- Powerful sorceries (Dragon Rope, Ancient Key) should be rarer on the board than minor ones (Iron Bell, Safety Rope).
+Spent on use.
+
+---
+
+### Magic Compass
+**Type:** Board — player initiates before rolling.
+
+A "Use Sorcery" button is available at the start of the player's turn, before rolling the dice. When clicked, it opens a small window to pick from available sorceries of the type that can be used before making the move. Selecting Magic Compass from available options opens some controls where the player defines two things: direction (forward toward the boss, or backward toward tile 1) and exact distance (1, 2, or 3 tiles). The chip moves to that exact destination instead of rolling. The destination tile's event resolves normally. The player cannot choose a destination beyond tile 64 in the forward direction or below tile 1 in the backward direction.
+
+Spent on use.
+
+---
+
+### Ancient Key
+**Type:** Board — player initiates before rolling.
+
+Works similarly to a ladder: the player jumps one full row up (backward) or down (forward) from their current position. Unlike ladders, this is not tied to a ladder tile — the player creates their own shortcut. However, it can only be used when the player is currently standing on a normal (regular) tile. It cannot be used from fight, item, trap, hole, ladder, or boss tiles.
+
+The "Use Sorcery" button is available at the start of the player's turn, before rolling the dice. This is when Ancient Key must be activated — before the roll, from the player's current standing position. The player must be currently standing on a normal tile to use it — if standing on any other tile type, Ancient Key is greyed out and unavailable. The player selects direction (one row up or one row down). The chip jumps to the corresponding tile on the adjacent row, and that tile's event resolves normally.
+
+Spent on use.
+
+---
+
+### Safety Rope
+**Type:** Board — triggered by the game, player decides to use or not.
+
+When a player lands on a hole tile, before the fall is executed, the game checks if the player holds this sorcery. If yes, the game asks: "You hold the Safety Rope. Anchor yourself and stay?" The player chooses Yes or No. Yes spends the sorcery and the player stays on the hole tile — no fall occurs, turn ends normally. No preserves the sorcery and the fall proceeds as normal. A player may deliberately choose to fall even with the rope available.
+
+Spent on use.
+
+---
+
+### Sixth Sense
+**Type:** Protection — triggered by the game, player decides to use or not.
+
+When a player lands on a trap tile, the trap type and its full effect are revealed to the player first — before anything is applied. The player reads what is about to happen. Only then does the game check if the player holds this sorcery and ask: "You sense the danger. Use Sixth Sense to block this trap?" The player makes an informed decision — they know exactly what they are blocking. Yes spends the sorcery and the trap is cancelled entirely. No preserves the sorcery and the trap resolves normally.
+
+Spent on use.
+
+---
+
+### Magic Powder
+**Type:** Combat — triggered by the game after a dice loss, player decides to use or not.
+
+Magic Powder only applies when a battle round requires a dice roll (tied pose matchup situation). The dice roll happens naturally and visibly — both dice are shown. If the natural result favours the player, the round is won normally and the sorcery is not involved. If the natural result is a loss, the game pauses and — if the player holds Magic Powder — asks: "The dice went against you. Use Magic Powder to re-roll?" The player chooses Yes or No. Yes spends the sorcery and both dice are re-rolled. The new result stands — the player can still lose the re-roll. No preserves the sorcery and the original dice loss stands. If the player does not use it in time or chooses not to, the round is lost.
+
+Spent on use.
+
+---
+
+### Oracle's Eye
+**Type:** Combat — player initiates during pose selection.
+
+During the pose selection phase of a battle round, before the player commits their own choice, a "Use Oracle's Eye" button is available (if held). Activating it reveals the enemy's chosen pose — type and height — before the player picks their own pose. The player then makes their choice with full knowledge of what they are facing. The enemy pose does not change after being revealed. Only applies to the current round.
+
+Spent on use.
+
+---
+
+### Iron Bell
+**Type:** Combat — triggered by the game after a round loss, player decides to use or not.
+
+After a battle round fully resolves as a loss for the player — poses revealed, result shown, defeat displayed — the game pauses and checks if the player holds this sorcery. If yes, the game asks: "This round was lost. Ring the Iron Bell and replay it?" The player sees the full round result before deciding. Yes spends the sorcery and the entire round is cancelled — both players return to pose selection and play the round again from scratch. The re-played round follows all normal rules and the player can lose it again. No preserves the sorcery and the loss stands. If the player does not use it or chooses not to, the round result is final.
+
+Spent on use.
+
+### Sorcery Balance Principles
+
+- All sorceries are spent on use and cannot be recovered except by finding them again on item tiles (subject to the exclusion rule for already-held sorceries).
+- Sorceries range from highly situational (Safety Rope — only applicable on 3 hole tiles) to broadly applicable (Oracle's Eye — useful in any battle round). This is intentional. Not every find is equally powerful, and players cannot choose what they find.
+- No sorcery guarantees a final victory. Individual rounds or board events can be influenced, but the overall game outcome remains uncertain.
+- All sorceries are drawn from the same pool with equal probability, excluding sorceries the player already holds. There is no rarity weighting — luck determines what you find.
 
 ---
 
