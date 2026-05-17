@@ -238,14 +238,11 @@ function placeFights(tiles) {
 }
 
 function placeHoles(tiles) {
-  // 3 holes total. Distribution: exactly two with fallRows=1 and exactly
-  // one with fallRows=2.
+  // 3 holes total, all with fallRows=1.
   //
   // Origin restrictions:
   //   - Origin must be in tiles 6..56 (no holes in 1..5 or 57..64).
   //   - Tile 49 is forbidden — its 1-row fall lands on the boss tile 64.
-  //   - Tiles 50..56 sit on row 6 and are only allowed as 1-row holes
-  //     (a 2-row fall from row 6 would overshoot onto the boss).
   //   - No hole's destination may be the boss tile 64.
   //
   // Spacing:
@@ -294,20 +291,7 @@ function placeHoles(tiles) {
     return true;
   }
 
-  // Place the single 2-row hole first. Its origin must be in rows 0..5
-  // (tiles 6..48); row-6 origins (50..56) can only carry a 1-row fall.
-  let placed2 = null;
-  for (const origin of shuffle(eligible)) {
-    if (origin > 48) continue;
-    if (!spacedAndFree(origin)) continue;
-    const chosen = pickFor(origin, [2]);
-    if (chosen) { placed2 = chosen; break; }
-  }
-  if (!placed2) return null;
-  placed.push(placed2);
-  reserved.add(placed2.dest);
-
-  // Place the two 1-row holes.
+  // Place three 1-row holes.
   for (const origin of shuffle(eligible)) {
     if (placed.length >= 3) break;
     if (!spacedAndFree(origin)) continue;
@@ -329,16 +313,21 @@ function placeTraps(tiles, reserved) {
   // of 6 (ALL_TRAP_TYPES) and assign one to each placed tile. Eligible 6..59.
   // No within 2 of fight or hole. No two trap tiles adjacent.
   // Skips tiles reserved as hole landing points (must remain normal).
+  // Must come AFTER the first item tile — i.e. no trap may precede the first
+  // item on the path. (Items are placed before traps for this reason.)
   const fights = [];
   const holes = [];
+  let firstItem = Infinity;
   for (let i = 1; i <= 64; i++) {
     if (tiles[i].type === T.FIGHT) fights.push(i);
     if (tiles[i].type === T.HOLE) holes.push(i);
+    if (tiles[i].type === T.ITEM && i < firstItem) firstItem = i;
   }
 
   function eligibleFor(alreadyPlaced) {
     const result = [];
     for (let i = 6; i <= 59; i++) {
+      if (i < firstItem) continue;
       if (tiles[i].type !== T.NORMAL) continue;
       if (reserved.has(i)) continue;
       let bad = false;
@@ -439,7 +428,7 @@ function placeLadders(tiles, holeReserved) {
 function validateBoard(tiles) {
   // Hard post-check the spec invariants that have caused regressions before.
   const holeOrigins = [];
-  let oneRowHoles = 0, twoRowHoles = 0;
+  let oneRowHoles = 0;
   for (let i = 1; i <= 64; i++) {
     const t = tiles[i];
     if (t.type !== T.HOLE) continue;
@@ -447,8 +436,7 @@ function validateBoard(tiles) {
     if (t.dest === 64) return false;            // never fall onto the boss
     if (i === 49) return false;                 // forbidden origin
     if (i < 6 || i > 56) return false;          // origin must be in 6..56
-    if (i >= 50 && i <= 56 && t.fallRows !== 1) return false; // row 6 → 1-row only
-    if (t.fallRows !== 1 && t.fallRows !== 2) return false;
+    if (t.fallRows !== 1) return false;          // all holes are 1-row
     const { row: rOrig, col } = tileGridPos(i);
     const expectedRow = rOrig + t.fallRows;
     if (expectedRow >= ROWS) return false;       // overshoot is not permitted
@@ -456,10 +444,10 @@ function validateBoard(tiles) {
     if (t.dest !== expected) return false;
     const d = tiles[t.dest];
     if (!d || d.type !== T.NORMAL) return false;
-    if (t.fallRows === 1) oneRowHoles++; else twoRowHoles++;
+    oneRowHoles++;
     holeOrigins.push(i);
   }
-  if (oneRowHoles !== 2 || twoRowHoles !== 1) return false;
+  if (oneRowHoles !== 3) return false;
   holeOrigins.sort((a, b) => a - b);
   for (let i = 1; i < holeOrigins.length; i++) {
     if (holeOrigins[i] - holeOrigins[i - 1] < 2) return false;
@@ -535,9 +523,10 @@ function tryGenerate() {
   if (!placeFights(tiles)) return null;
   const holeReserved = placeHoles(tiles);
   if (holeReserved === null) return null;
-  if (!placeTraps(tiles, holeReserved)) return null;
-  // Items go BEFORE ladders so a ladder can land on an item tile (allowed by spec).
+  // Items go BEFORE traps so traps can be constrained to lie after the first
+  // item tile, and BEFORE ladders so a ladder can land on an item tile.
   if (!placeItems(tiles, holeReserved)) return null;
+  if (!placeTraps(tiles, holeReserved)) return null;
   if (!placeLadders(tiles, holeReserved)) return null;
   if (!validateBoard(tiles)) return null;
   return tiles;
@@ -1294,6 +1283,35 @@ function resolveCombat(p1Pose, p2Pose) {
   };
 }
 
+// Combat Rating: derived dynamically from a player's intermediate battle log.
+// Wins are +1, losses −1, Mantle-of-Mist skips never enter the log, and the
+// final duel never appends to the log either — so this naturally captures
+// the spec's definition. Battle-Log-Modifier traps flip a "won" to "lost"
+// in place, which flows through without extra bookkeeping.
+function computeCombatRating(log) {
+  let r = 0;
+  for (const e of log) {
+    if (e.outcome === "won") r += 1;
+    else if (e.outcome === "lost") r -= 1;
+  }
+  return r;
+}
+
+// Dice modifier table from the spec.
+function combatRatingDiceModifier(rating) {
+  if (rating >= 3)  return 2;
+  if (rating >= 1)  return 1;
+  if (rating === 0) return 0;
+  if (rating >= -2) return -1;
+  return -2;
+}
+
+function formatSignedRating(r) {
+  if (r > 0) return `+${r}`;
+  if (r < 0) return `−${Math.abs(r)}`;
+  return "0";
+}
+
 // =============================================================================
 // PHASE 4 — MODAL COMPONENTS
 // =============================================================================
@@ -1486,6 +1504,8 @@ function BattleLogPanel({ shaolinLog, ninjaLog }) {
   function column(label, accent, log) {
     const wins = log.filter((e) => e.outcome === "won").length;
     const losses = log.filter((e) => e.outcome === "lost").length;
+    const rating = computeCombatRating(log);
+    const ratingColor = rating > 0 ? "#1c6f2c" : rating < 0 ? "#a8261b" : "#7a5d00";
     return (
       <div style={{ flex: "1 1 0", minWidth: 220 }}>
         <div style={{
@@ -1496,6 +1516,17 @@ function BattleLogPanel({ shaolinLog, ninjaLog }) {
           <span style={{ color: "#7a5d00", fontSize: 11 }}>
             {wins}W / {losses}L
           </span>
+        </div>
+        <div style={{
+          display: "flex", justifyContent: "space-between", alignItems: "baseline",
+          marginBottom: 4,
+          fontSize: 11,
+          color: "#5a4317",
+        }}>
+          <span style={{ letterSpacing: 0.3 }}>Combat Rating</span>
+          <strong style={{ color: ratingColor, fontFamily: "Georgia, serif" }}>
+            {formatSignedRating(rating)}
+          </strong>
         </div>
         <div style={{
           maxHeight: 220,
@@ -1547,7 +1578,7 @@ function BattleLogPanel({ shaolinLog, ninjaLog }) {
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         {column("🥋 Shaolin Master", "#22c55e", shaolinLog)}
-        {column("🥷 Ninja", "#ff5252", ninjaLog)}
+        {column("🥷 Ninja Warrior", "#ff5252", ninjaLog)}
       </div>
     </div>
   );
@@ -1782,7 +1813,7 @@ function PlayerPanel({
       >
         {rollLabelOverride || (character === "shaolin"
           ? "🥋 Roll for Shaolin Master"
-          : "🥷 Roll for Ninja")}
+          : "🥷 Roll for Ninja Warrior")}
       </button>
 
       <div style={{
@@ -2445,7 +2476,7 @@ function FinalDuelIntroModal({ onBegin }) {
         <div style={{ display: "flex", gap: 20, justifyContent: "center", alignItems: "center", marginBottom: 28 }}>
           <span style={{ fontSize: 15, fontWeight: 700, color: "#22c55e" }}>🥋 Shaolin Master</span>
           <span style={{ fontSize: 18, color: "#d4af37" }}>vs</span>
-          <span style={{ fontSize: 15, fontWeight: 700, color: "#ff5252" }}>🥷 Ninja</span>
+          <span style={{ fontSize: 15, fontWeight: 700, color: "#ff5252" }}>🥷 Ninja Warrior</span>
         </div>
         <button style={{ ...BTN_PRIMARY, background: "#d4af37", color: "#1a1008", fontSize: 15, padding: "11px 28px" }} onClick={onBegin}>
           Begin Duel
@@ -2601,10 +2632,14 @@ function BattleScreen({
   p1Sorceries = [], p2Sorceries = [],
   onSpendSorcery = () => {},
   isFinal = false,
+  p1CombatRating = 0, p2CombatRating = 0,
   onResolved,
 }) {
   const winsToWin = isFinal ? 3 : 2;
   const maxRounds = winsToWin * 2 - 1;
+  // Combat Rating dice modifier only applies in the final duel.
+  const p1Mod = isFinal ? combatRatingDiceModifier(p1CombatRating) : 0;
+  const p2Mod = isFinal ? combatRatingDiceModifier(p2CombatRating) : 0;
   function playerHas(player, sorceryId) {
     const list = player === "p1" ? p1Sorceries : p2Sorceries;
     return list.some((s) => s.id === sorceryId);
@@ -2748,9 +2783,13 @@ function BattleScreen({
     setPhase("reveal");
   }
   function rollOnce() {
-    // One synchronous dice roll with the Sword bonus applied per side.
-    // If a player holds the Sword, roll two d6 for them and keep the higher
-    // result. Returns { p1, p2, p1Extra, p2Extra, p1Sword, p2Sword }.
+    // One synchronous dice roll with the Sword bonus applied per side, plus
+    // the Combat Rating modifier (final duel only — p1Mod/p2Mod are 0 elsewhere).
+    // If a player holds the Sword, roll two d6 and keep the higher result;
+    // the Combat Rating modifier is then added to that higher result.
+    // Returns { p1, p2, p1Final, p2Final, p1Extra, p2Extra, p1Sword, p2Sword,
+    //          p1Mod, p2Mod } where p1/p2 are the natural (pre-modifier) dice
+    // values shown to the player and p1Final/p2Final decide the round.
     const p1Sword = playerHas("p1", "sword");
     const p2Sword = playerHas("p2", "sword");
     let p1, p2, p1Extra = null, p2Extra = null;
@@ -2770,7 +2809,14 @@ function BattleScreen({
     } else {
       p2 = Math.floor(Math.random() * 6) + 1;
     }
-    return { p1, p2, p1Extra, p2Extra, p1Sword, p2Sword };
+    return {
+      p1, p2,
+      p1Final: p1 + p1Mod,
+      p2Final: p2 + p2Mod,
+      p1Extra, p2Extra,
+      p1Sword, p2Sword,
+      p1Mod, p2Mod,
+    };
   }
 
   function rollDice() {
@@ -2778,9 +2824,9 @@ function BattleScreen({
     do {
       res = rollOnce();
       tries++;
-    } while (res.p1 === res.p2);
+    } while (res.p1Final === res.p2Final);
     setDice({ ...res, tries });
-    const winner = res.p1 > res.p2 ? "p1" : "p2";
+    const winner = res.p1Final > res.p2Final ? "p1" : "p2";
     const loser = winner === "p1" ? "p2" : "p1";
     // Magic Powder: if the natural roll went against a player who holds it,
     // pause and offer a re-roll before locking in the result.
@@ -2796,21 +2842,21 @@ function BattleScreen({
     if (!who) return;
     onSpendSorcery(who, "magic_powder");
     setMagicPowderPending(null);
-    // Re-roll both dice; Sword bonus (if any) still applies. The new result
-    // stands no matter what.
+    // Re-roll both dice; Sword bonus and Combat Rating modifier (if any) still
+    // apply. The new result stands no matter what.
     let res, tries = 0;
     do {
       res = rollOnce();
       tries++;
-    } while (res.p1 === res.p2);
+    } while (res.p1Final === res.p2Final);
     setDice({ ...res, tries });
-    setFinalWinner(res.p1 > res.p2 ? "p1" : "p2");
+    setFinalWinner(res.p1Final > res.p2Final ? "p1" : "p2");
   }
 
   function declineMagicPowder() {
     // Original dice loss stands.
     if (!dice) return;
-    const winner = dice.p1 > dice.p2 ? "p1" : "p2";
+    const winner = dice.p1Final > dice.p2Final ? "p1" : "p2";
     setMagicPowderPending(null);
     setFinalWinner(winner);
   }
@@ -3224,11 +3270,21 @@ function BattleScreen({
                     {" "}🗡️ Sword bonus: <strong>{dice.p1Extra.a}</strong> & <strong>{dice.p1Extra.b}</strong> — higher taken
                   </span>
                 )}
+                {dice.p1Mod !== 0 && (
+                  <span style={{ color: "#7a5500", fontStyle: "italic" }}>
+                    {" "}⚔ Combat Rating: <strong>{formatSignedRating(dice.p1Mod)}</strong> → total <strong>{dice.p1Final}</strong>
+                  </span>
+                )}
                 ,{" "}
                 <strong>{p2Label}</strong> rolled <strong>{dice.p2}</strong>
                 {dice.p2Sword && dice.p2Extra && (
                   <span style={{ color: "#7a5500", fontStyle: "italic" }}>
                     {" "}🗡️ Sword bonus: <strong>{dice.p2Extra.a}</strong> & <strong>{dice.p2Extra.b}</strong> — higher taken
+                  </span>
+                )}
+                {dice.p2Mod !== 0 && (
+                  <span style={{ color: "#7a5500", fontStyle: "italic" }}>
+                    {" "}⚔ Combat Rating: <strong>{formatSignedRating(dice.p2Mod)}</strong> → total <strong>{dice.p2Final}</strong>
                   </span>
                 )}
                 {dice.tries > 1 ? ` (after ${dice.tries - 1} tie re-roll${dice.tries > 2 ? "s" : ""})` : ""}.
@@ -3416,7 +3472,7 @@ export default function ShaolinGame() {
     } else {
       if (isShaolin) setShaolinHeld(false);
       else setNinjaHeld(false);
-      setSkipNotice(`${isShaolin ? "🥋 Shaolin Master" : "🥷 Ninja"} is held — turn skipped.`);
+      setSkipNotice(`${isShaolin ? "🥋 Shaolin Master" : "🥷 Ninja Warrior"} is held — turn skipped.`);
       setCurrentTurn(isShaolin ? "ninja" : "shaolin");
     }
   }, [currentTurn, shaolinHeld, ninjaHeld, isRolling, modal]);
@@ -3496,7 +3552,7 @@ export default function ShaolinGame() {
       if (!choice) return;
       const setInv = character === "shaolin" ? setShaolinInventory : setNinjaInventory;
       setInv((prev) => ({ ...prev, sorceries: prev.sorceries.filter((s) => s.id !== "magic_compass") }));
-      await rollFor(character, { directTarget: choice.target });
+      await rollFor(character, { directTarget: choice.target, stepwise: true });
       return;
     }
 
@@ -3617,6 +3673,13 @@ export default function ShaolinGame() {
     // events triggered by a fight-loss setback) resolves.
     async function resolveLanding(tile, opts = {}) {
       const t = tiles[tile];
+
+      // Magic Compass: holes and ladders are bypassed entirely — the chip
+      // stays put and any non-hole/ladder event on the same tile still fires
+      // (item, fight, trap).
+      if (opts.skipHoleAndLadder && (t.type === T.HOLE || t.type === T.LADDER)) {
+        return tile;
+      }
 
       if (t.type === T.HOLE) {
         await sleep(400);
@@ -3942,6 +4005,61 @@ export default function ShaolinGame() {
 
     // Direct movement via sorcery (Magic Compass / Ancient Key) — bypass dice.
     if (isDirect) {
+      // Magic Compass animates step-by-step along the path; holes and ladders
+      // along the way (including at the destination) are ignored. Ancient Key
+      // teleports along its vertical jump (no step animation).
+      const stepwise = !!opts.stepwise;
+      if (stepwise && current !== null && current !== directTarget) {
+        const dir = directTarget > current ? 1 : -1;
+        let pos = current;
+        while (pos !== directTarget) {
+          pos += dir;
+          // Reaching the boss tile mid-walk should still trigger the final
+          // duel like a normal step-into-64 move.
+          if (pos >= 64) {
+            setTile(64);
+            current = 64;
+            setIsRolling(false);
+            await showModal({ type: "final_duel_intro" });
+            setModal(null);
+            const result = await showModal({
+              type: "battle",
+              mode: "duel",
+              ninjaType: null,
+              activeCharacter: "shaolin",
+              otherCharacter: "ninja",
+              p1Extras: shaolinInventory.extraPoses,
+              p2Extras: ninjaInventory.extraPoses,
+              p1LockedType: shaolinLockedType,
+              p2LockedType: ninjaLockedType,
+              isFinal: true,
+            });
+            setModal(null);
+            setShaolinLockedType(null);
+            setNinjaLockedType(null);
+            setGameWinner(result === "p1" ? "shaolin" : "ninja");
+            return;
+          }
+          await sleep(500);
+          setTile(pos);
+        }
+        current = directTarget;
+        await sleep(200);
+        current = await resolveLanding(directTarget, { skipHoleAndLadder: true });
+
+        if (trapState.shaolin.dirty) {
+          setShaolinUsedTrapTypes(trapState.shaolin.usedTypes);
+          setShaolinTrappedTiles(trapState.shaolin.triggered);
+        }
+        if (trapState.ninja.dirty) {
+          setNinjaUsedTrapTypes(trapState.ninja.usedTypes);
+          setNinjaTrappedTiles(trapState.ninja.triggered);
+        }
+        setIsRolling(false);
+        setCurrentTurn(character === "shaolin" ? "ninja" : "shaolin");
+        return;
+      }
+
       if (directTarget >= 64) {
         setTile(64);
         current = 64;
@@ -4226,7 +4344,7 @@ export default function ShaolinGame() {
             const showDice = lastRoll?.character === char;
             const dice = showDice ? ` 🎲 ${lastRoll.value}` : "";
             if (isRolling && currentTurn === char) return `Rolling…${dice}`;
-            const name = char === "shaolin" ? "🥋 Roll for Shaolin Master" : "🥷 Roll for Ninja";
+            const name = char === "shaolin" ? "🥋 Roll for Shaolin Master" : "🥷 Roll for Ninja Warrior";
             return `${name}${dice}`;
           }
           return (
@@ -4257,7 +4375,7 @@ export default function ShaolinGame() {
               />
               <PlayerPanel
                 character="ninja"
-                label="🥷 Ninja"
+                label="🥷 Ninja Warrior"
                 sorceries={ninjaInventory.sorceries}
                 extraPoses={ninjaInventory.extraPoses}
                 held={ninjaHeld}
@@ -4295,7 +4413,7 @@ export default function ShaolinGame() {
               {gameWinner === "shaolin" ? "🥋" : "🥷"}
             </div>
             <h1 style={{ margin: "0 0 10px 0", fontSize: 22, color: "#d4af37", letterSpacing: 1 }}>
-              {gameWinner === "shaolin" ? "Shaolin Master" : "Ninja"} wins the ultimate duel.
+              {gameWinner === "shaolin" ? "Shaolin Master" : "Ninja Warrior"} wins the ultimate duel.
             </h1>
             <p style={{ fontSize: 14, color: "#c4ad7b", marginBottom: 28 }}>
               {gameWinner === "shaolin"
@@ -4336,11 +4454,11 @@ export default function ShaolinGame() {
           ninjaType={modal.ninjaType}
           activeCharacter={modal.activeCharacter}
           otherCharacter={modal.otherCharacter}
-          p1Label={modal.activeCharacter === "shaolin" ? "🥋 Shaolin Master" : "🥷 Ninja"}
+          p1Label={modal.activeCharacter === "shaolin" ? "🥋 Shaolin Master" : "🥷 Ninja Warrior"}
           p2Label={
             modal.mode === "solo"
               ? `🥷 ${NINJA[modal.ninjaType].name}`
-              : (modal.otherCharacter === "shaolin" ? "🥋 Shaolin Master" : "🥷 Ninja")
+              : (modal.otherCharacter === "shaolin" ? "🥋 Shaolin Master" : "🥷 Ninja Warrior")
           }
           p1Extras={modal.p1Extras || []}
           p2Extras={modal.p2Extras || []}
@@ -4359,6 +4477,18 @@ export default function ShaolinGame() {
             setInv((prev) => ({ ...prev, sorceries: prev.sorceries.filter((s) => s.id !== id) }));
           }}
           isFinal={!!modal.isFinal}
+          p1CombatRating={
+            modal.activeCharacter === "shaolin"
+              ? computeCombatRating(shaolinBattleLog)
+              : computeCombatRating(ninjaBattleLog)
+          }
+          p2CombatRating={
+            modal.mode === "duel"
+              ? (modal.otherCharacter === "shaolin"
+                  ? computeCombatRating(shaolinBattleLog)
+                  : computeCombatRating(ninjaBattleLog))
+              : 0
+          }
           onResolved={(result) => modal.resolve(result)}
         />
       )}
