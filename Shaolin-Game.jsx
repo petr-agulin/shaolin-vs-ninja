@@ -2562,6 +2562,7 @@ function ScorePips({
   scores, p1Label, p2Label,
   onDark = false, nameColor = null, vsColor = null,
   p1PipColor = "#22c55e", p2PipColor = "#ff5252",
+  winsToWin = 2,
 }) {
   const Pip = ({ filled, color }) => (
     <span style={{
@@ -2570,21 +2571,24 @@ function ScorePips({
       border: `2px solid ${color}`,
     }} />
   );
+  const pipIndexes = Array.from({ length: winsToWin }, (_, i) => i + 1);
   return (
     <div style={{
       display: "flex", gap: 12, alignItems: "center", justifyContent: "center",
       margin: "8px 0 16px 0", fontSize: 13, flexWrap: "wrap",
     }}>
       <span style={{ display: "inline-flex", gap: 4 }}>
-        <Pip filled={scores.p1 >= 1} color={p1PipColor} />
-        <Pip filled={scores.p1 >= 2} color={p1PipColor} />
+        {pipIndexes.map((n) => (
+          <Pip key={n} filled={scores.p1 >= n} color={p1PipColor} />
+        ))}
       </span>
       <strong style={{ color: nameColor || "#22c55e" }}>{p1Label}</strong>
       <span style={{ color: vsColor || (onDark ? "#e8d2a0" : "#7a5500"), fontWeight: 700 }}>Vs.</span>
       <strong style={{ color: nameColor || "#ff5252" }}>{p2Label}</strong>
       <span style={{ display: "inline-flex", gap: 4 }}>
-        <Pip filled={scores.p2 >= 1} color={p2PipColor} />
-        <Pip filled={scores.p2 >= 2} color={p2PipColor} />
+        {pipIndexes.map((n) => (
+          <Pip key={n} filled={scores.p2 >= n} color={p2PipColor} />
+        ))}
       </span>
     </div>
   );
@@ -2596,8 +2600,11 @@ function BattleScreen({
   p1LockedType = null, p2LockedType = null,
   p1Sorceries = [], p2Sorceries = [],
   onSpendSorcery = () => {},
+  isFinal = false,
   onResolved,
 }) {
+  const winsToWin = isFinal ? 3 : 2;
+  const maxRounds = winsToWin * 2 - 1;
   function playerHas(player, sorceryId) {
     const list = player === "p1" ? p1Sorceries : p2Sorceries;
     return list.some((s) => s.id === sorceryId);
@@ -2612,7 +2619,25 @@ function BattleScreen({
     ? BASE_POSES_NINJA
     : (p2Character === "shaolin" ? BASE_POSES_SHAOLIN : BASE_POSES_NINJA).concat(p2Extras);
 
-  const [phase, setPhase] = useState("p1_choose");
+  // First chooser of the round and current device holder. Both default to p1
+  // (the active player who triggered the battle). In the final duel, Oracle's
+  // Eye possession reorders the round so the Eye holder picks SECOND.
+  const [firstChooser, setFirstChooser] = useState(() => {
+    if (!isFinal || isSolo) return "p1";
+    const p1Eye = p1Sorceries.some((s) => s.id === "oracle_eye");
+    const p2Eye = p2Sorceries.some((s) => s.id === "oracle_eye");
+    if (p1Eye && !p2Eye) return "p2";
+    return "p1";
+  });
+  const [deviceHolder, setDeviceHolder] = useState("p1");
+  const [phase, setPhase] = useState(() => {
+    if (!isFinal || isSolo) return "p1_choose";
+    const p1Eye = p1Sorceries.some((s) => s.id === "oracle_eye");
+    const p2Eye = p2Sorceries.some((s) => s.id === "oracle_eye");
+    if (p1Eye && p2Eye) return "oracle_cancel";
+    if (p1Eye && !p2Eye) return "handoff_p2"; // p2 chooses first
+    return "p1_choose";
+  });
   const [round, setRound] = useState(1);
   const [scores, setScores] = useState({ p1: 0, p2: 0 });
   const [p1Choice, setP1Choice] = useState(null);
@@ -2631,6 +2656,20 @@ function BattleScreen({
   // Iron Bell — the round resolved as a loss; offer ring/decline until decided.
   const [ironBellDeclined, setIronBellDeclined] = useState(false);
 
+  // Final duel + both players hold Oracle's Eye → cancel out: spend both
+  // on mount. The "oracle_cancel" phase is shown briefly then the user
+  // continues to standard pose selection.
+  useEffect(() => {
+    if (!isFinal || isSolo) return;
+    const p1Eye = p1Sorceries.some((s) => s.id === "oracle_eye");
+    const p2Eye = p2Sorceries.some((s) => s.id === "oracle_eye");
+    if (p1Eye && p2Eye) {
+      onSpendSorcery("p1", "oracle_eye");
+      onSpendSorcery("p2", "oracle_eye");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   function confirmP1() {
     if (!selecting) return;
     const p1 = selecting;
@@ -2644,8 +2683,17 @@ function BattleScreen({
       setOutcome(result);
       if (result.winner !== "dice") setFinalWinner(result.winner);
       setPhase("reveal");
-    } else {
+    } else if (firstChooser === "p1") {
+      // p1 is first chooser → hand the device to p2 next.
       setPhase("handoff_p2");
+    } else {
+      // p1 is the second chooser (final-duel Oracle's Eye reorder): p2 has
+      // already locked their pose, so resolve combat immediately.
+      const result = resolveCombat(p1, p2Choice);
+      setOutcome(result);
+      if (result.winner !== "dice") setFinalWinner(result.winner);
+      setDeviceHolder("p1");
+      setPhase("reveal");
     }
   }
 
@@ -2666,6 +2714,18 @@ function BattleScreen({
     onSpendSorcery(player, "oracle_eye");
   }
   function readyFor(player) {
+    setDeviceHolder(player);
+    // Final duel: when the Eye holder receives the device to choose SECOND,
+    // automatically spend the sorcery and reveal the opponent's pose.
+    if (isFinal && !isSolo) {
+      if (player === "p1" && firstChooser === "p2" && playerHas("p1", "oracle_eye")) {
+        setRevealedByP1(true);
+        onSpendSorcery("p1", "oracle_eye");
+      } else if (player === "p2" && firstChooser === "p1" && playerHas("p2", "oracle_eye")) {
+        setRevealedByP2(true);
+        onSpendSorcery("p2", "oracle_eye");
+      }
+    }
     setPhase(player === "p1" ? "p1_choose" : "p2_choose");
   }
   function confirmP2() {
@@ -2673,11 +2733,18 @@ function BattleScreen({
     const p2 = selecting;
     setP2Choice(p2);
     setSelecting(null);
+    if (firstChooser === "p2") {
+      // p2 is first chooser (final-duel Oracle's Eye reorder): hand the
+      // device to p1 next so they can pick with the auto-reveal.
+      setPhase("handoff_p1");
+      return;
+    }
     const result = resolveCombat(p1Choice, p2);
     setOutcome(result);
     if (result.winner !== "dice") {
       setFinalWinner(result.winner);
     }
+    setDeviceHolder("p2");
     setPhase("reveal");
   }
   function rollOnce() {
@@ -2748,6 +2815,28 @@ function BattleScreen({
     setFinalWinner(winner);
   }
 
+  // Compute the round-starting phase given the current device holder and the
+  // recomputed first chooser. Updates firstChooser. Final-duel Oracle's Eye
+  // reorder only applies when exactly one player still holds the Eye.
+  function beginRoundAfterReset() {
+    if (isSolo) {
+      setPhase("p1_choose");
+      return;
+    }
+    let nextFC = "p1";
+    if (isFinal) {
+      const p1Eye = playerHas("p1", "oracle_eye");
+      const p2Eye = playerHas("p2", "oracle_eye");
+      if (p1Eye && !p2Eye) nextFC = "p2";
+      // Both / only-p2 / neither all keep standard "p1" first order.
+    }
+    setFirstChooser(nextFC);
+    if (deviceHolder === nextFC) {
+      setPhase(nextFC === "p1" ? "p1_choose" : "p2_choose");
+    } else {
+      setPhase(nextFC === "p1" ? "handoff_p1" : "handoff_p2");
+    }
+  }
   function ringIronBell(player) {
     // Spend the bell and replay the round — scores untouched.
     onSpendSorcery(player, "iron_bell");
@@ -2761,13 +2850,13 @@ function BattleScreen({
     setRevealedByP2(false);
     setMagicPowderPending(null);
     setIronBellDeclined(false);
-    setPhase(isSolo ? "p1_choose" : "handoff_p1");
+    beginRoundAfterReset();
   }
   function nextRound() {
     const winner = finalWinner;
     const newScores = { ...scores, [winner]: scores[winner] + 1 };
     setScores(newScores);
-    if (newScores.p1 >= 2 || newScores.p2 >= 2) {
+    if (newScores.p1 >= winsToWin || newScores.p2 >= winsToWin) {
       setPhase("battle_end");
     } else {
       setRound((r) => r + 1);
@@ -2781,11 +2870,11 @@ function BattleScreen({
       setRevealedByP2(false);
       setMagicPowderPending(null);
       setIronBellDeclined(false);
-      setPhase(isSolo ? "p1_choose" : "handoff_p1");
+      beginRoundAfterReset();
     }
   }
   function finishBattle() {
-    const battleWinner = scores.p1 >= 2 ? "p1" : "p2";
+    const battleWinner = scores.p1 >= winsToWin ? "p1" : "p2";
     if (isSolo) {
       onResolved(battleWinner === "p1" ? "won" : "lost");
     } else {
@@ -2828,6 +2917,7 @@ function BattleScreen({
             vsColor="#1a1208"
             p1PipColor="#0a5e2a"
             p2PipColor="#8e1620"
+            winsToWin={winsToWin}
           />
           <h2 style={{ margin: "6px 0 0 0", fontSize: 18, color: "#1a1208" }}>
             {label}, choose your pose
@@ -3030,9 +3120,9 @@ function BattleScreen({
     return (
       <Draggable style={{ ...MODAL_BOX, maxWidth: 420, width: "90%" }}>
         <div style={{ fontSize: 13, color: "#7a5500", marginBottom: 6 }}>
-          Round {round} of 3
+          Round {round} of {maxRounds}
         </div>
-        <ScorePips scores={scores} p1Label={p1Label} p2Label={p2Label} />
+        <ScorePips scores={scores} p1Label={p1Label} p2Label={p2Label} winsToWin={winsToWin} />
         <div style={{ fontSize: 40, marginBottom: 8 }}>🤲</div>
         <h2 style={{ margin: "0 0 10px 0", fontSize: 18 }}>Pass the device</h2>
         <p style={{ fontSize: 14, marginBottom: 22, color: "#5a4317" }}>
@@ -3076,6 +3166,7 @@ function BattleScreen({
             vsColor="#1a1208"
             p1PipColor="#0a5e2a"
             p2PipColor="#8e1620"
+            winsToWin={winsToWin}
           />
           <h2 style={{ margin: "6px 0 0 0", fontSize: 18, color: "#1a1208" }}>Reveal</h2>
         </div>
@@ -3195,7 +3286,7 @@ function BattleScreen({
                 </div>
               ) : (
                 <button style={BTN_PRIMARY} onClick={nextRound}>
-                  {(scores[winnerSide] + 1) >= 2 ? "End battle" : "Next round"}
+                  {(scores[winnerSide] + 1) >= winsToWin ? "End battle" : "Next round"}
                 </button>
               )}
             </>
@@ -3206,14 +3297,14 @@ function BattleScreen({
   }
 
   function endScreen() {
-    const battleWinner = scores.p1 >= 2 ? "p1" : "p2";
+    const battleWinner = scores.p1 >= winsToWin ? "p1" : "p2";
     if (!isSolo) {
       const winnerLabel = battleWinner === "p1" ? p1Label : p2Label;
       return (
         <Draggable style={{ ...MODAL_BOX, maxWidth: 420, width: "90%" }}>
           <div style={{ fontSize: 40, marginBottom: 8 }}>⚔️</div>
           <h2 style={{ margin: "0 0 10px 0", fontSize: 20 }}>The Duel is Over</h2>
-          <ScorePips scores={scores} p1Label={p1Label} p2Label={p2Label} />
+          <ScorePips scores={scores} p1Label={p1Label} p2Label={p2Label} winsToWin={winsToWin} />
           <p style={{ fontSize: 15, fontWeight: 700, marginBottom: 20, color: "#5a4317" }}>
             {winnerLabel} wins the ultimate duel.
           </p>
@@ -3228,7 +3319,7 @@ function BattleScreen({
         <h2 style={{ margin: "0 0 10px 0", fontSize: 20 }}>
           {won ? "Victory!" : "Defeat"}
         </h2>
-        <ScorePips scores={scores} p1Label={p1Label} p2Label={p2Label} />
+        <ScorePips scores={scores} p1Label={p1Label} p2Label={p2Label} winsToWin={winsToWin} />
         <p style={{ fontSize: 14, marginBottom: 20, color: "#5a4317" }}>
           {won
             ? `${p1Label} defeats the ${ninjaInfo.name} and holds their ground.`
@@ -3239,8 +3330,28 @@ function BattleScreen({
     );
   }
 
+  function oracleCancelScreen() {
+    return (
+      <Draggable style={{ ...MODAL_BOX, maxWidth: 460, width: "92%" }}>
+        <div style={{ fontSize: 44, marginBottom: 6 }}>🔮</div>
+        <h2 style={{ margin: "0 0 14px 0", fontSize: 20, color: "#7a5500" }}>
+          Both Eyes cancel each other out
+        </h2>
+        <p style={{ fontSize: 14, marginBottom: 18, color: "#5a4317", fontStyle: "italic" }}>
+          Both <strong>{p1Label}</strong> and <strong>{p2Label}</strong> hold Oracle's Eye.
+          The two visions clash and dissolve. Both sorceries are spent —
+          the round proceeds with standard pose selection.
+        </p>
+        <button style={BTN_PRIMARY} onClick={() => setPhase("p1_choose")}>
+          Continue
+        </button>
+      </Draggable>
+    );
+  }
+
   return (
     <div style={MODAL_OVERLAY}>
+      {phase === "oracle_cancel" && oracleCancelScreen()}
       {phase === "p1_choose"   && chooseScreen("p1", p1Label, p1Poses)}
       {phase === "handoff_p2"  && handoffScreen("p2", p2Label)}
       {phase === "p2_choose"   && chooseScreen("p2", p2Label, p2Poses)}
@@ -3847,6 +3958,7 @@ export default function ShaolinGame() {
           p2Extras: ninjaInventory.extraPoses,
           p1LockedType: shaolinLockedType,
           p2LockedType: ninjaLockedType,
+          isFinal: true,
         });
         setModal(null);
         setShaolinLockedType(null);
@@ -3893,6 +4005,7 @@ export default function ShaolinGame() {
           p2Extras: ninjaInventory.extraPoses,
           p1LockedType: shaolinLockedType,
           p2LockedType: ninjaLockedType,
+          isFinal: true,
         });
         setModal(null);
         setShaolinLockedType(null);
@@ -4245,6 +4358,7 @@ export default function ShaolinGame() {
             const setInv = char === "shaolin" ? setShaolinInventory : setNinjaInventory;
             setInv((prev) => ({ ...prev, sorceries: prev.sorceries.filter((s) => s.id !== id) }));
           }}
+          isFinal={!!modal.isFinal}
           onResolved={(result) => modal.resolve(result)}
         />
       )}
