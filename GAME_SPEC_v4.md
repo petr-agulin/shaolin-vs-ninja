@@ -100,6 +100,18 @@ The player is immediately moved back 2–4 tiles (random). The destination tile'
 Turns a battle victory into a defeat. If the player has no battles recorded in their log yet, no effect ("There is no history here to rewrite."). If the player has at least one recorded battle, find the most recent Victory entry and change it to Defeat in the log. If all recorded battles are already Defeats, no effect.
 Note: when Combat Rating is implemented, it must be calculated dynamically from the current state of the battle log (total wins minus total defeats) rather than tracked as a running counter. This ensures the trap's log modification automatically reflects in the Combat Rating without any separate adjustment. For example: a player with 3 wins and 0 defeats has Combat Rating +3. After the trap turns one win into a defeat, the log shows 2 wins and 1 defeat, so Combat Rating recalculates to +1. If that player then reaches the final duel with this record, their dice modifier is +1 (positive, still an advantage) — the trap hurt them but did not erase all their progress.
 
+**Rival's Tribute**
+When a player lands on a trap tile, the game selects a trap type randomly from a valid pool. Rival's Tribute is only included in the pool if the landing player currently holds at least one sorcery or at least one acquired extra pose. If the landing player holds neither, Rival's Tribute is excluded from the pool entirely for this landing and another trap type is selected instead.This guarantees the trap tile always produces a meaningful effect and Rival's Tribute is never triggered when there is nothing to take.
+
+When this trap is validly triggered, the game builds a combined pool of all sorceries and all acquired extra poses currently held by the other player. The system automatically selects one item at random from this pool — neither player makes a choice. The selected item is immediately removed from the landing player's inventory and added to the other player's 
+inventory. If an extra pose is transferred, it becomes available to the other player in all future battles (unless lossed later) and is no longer available to the landing player from that 
+point forward (unless acquired again). Both player panels update immediately to reflect the change.
+
+The modal announces: "The trap springs against you. Your [item name] passes into your rival's hands." displaying the item name and type clearly. Single Continue button closes 
+the modal and re-enables Roll Dice for the next player's turn.
+
+This trap is distinct from Sorcery Theft (which removes a sorcery from the landing player themselves) and Pose Theft (which removes an extra pose from the landing player themselves). Rival's Tribute always takes from the opponent and gives to the landing player.
+
 ### Balancing Constraints for Generation
 
 Every generated board must satisfy all of the following:
@@ -129,7 +141,7 @@ Every generated board must satisfy all of the following:
 - At least one item tile or normal tile must exist between a hole's origin and its destination (so the skip always costs something).
 
 **Traps:**
-- At board generation, 4 trap types are randomly selected from the pool of 6 and assigned to the 4 trap tiles.
+- At board generation, 4 trap types are randomly selected from the pool of up to 7 types: Hold, Sorcery Theft, Pose Theft, Setback, Battle Log Modifier, Pose Lock, and Rival's Tribute.
 - No trap tile within 5 tiles of the start.
 - No trap tile within 2 tiles of a fight tile.
 - No two trap tiles adjacent to each other.

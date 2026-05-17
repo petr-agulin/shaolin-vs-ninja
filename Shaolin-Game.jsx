@@ -75,15 +75,16 @@ const NINJA = {
 };
 
 const TRAP = {
-  hold:                { name: "Hold",                short: "Hold"   },
-  sorcery_theft:       { name: "Sorcery Theft",       short: "S-Theft"},
-  pose_theft:          { name: "Pose Theft",          short: "P-Theft"},
-  setback:             { name: "Setback",             short: "Back"   },
-  battle_log_modifier: { name: "Battle Log Modifier", short: "Curse"  },
-  pose_lock:           { name: "Pose Lock",           short: "Lock"   },
+  hold:                { name: "Hold",                short: "Hold"    },
+  sorcery_theft:       { name: "Sorcery Theft",       short: "S-Theft" },
+  pose_theft:          { name: "Pose Theft",          short: "P-Theft" },
+  setback:             { name: "Setback",             short: "Back"    },
+  battle_log_modifier: { name: "Battle Log Modifier", short: "Curse"   },
+  pose_lock:           { name: "Pose Lock",           short: "Lock"    },
+  rivals_tribute:     { name: "Rival's Tribute",     short: "Tribute" },
 };
 
-const ALL_TRAP_TYPES = ["hold", "sorcery_theft", "pose_theft", "setback", "battle_log_modifier", "pose_lock"];
+const ALL_TRAP_TYPES = ["hold", "sorcery_theft", "pose_theft", "setback", "battle_log_modifier", "pose_lock", "rivals_tribute"];
 
 const TRAP_INFO = {
   hold: {
@@ -115,6 +116,11 @@ const TRAP_INFO = {
     icon: "🔒",
     title: "Pose Lock",
     flavor: "Iron chains bind one of your stances — it will not answer your call.",
+  },
+  rivals_tribute: {
+    icon: "🤲",
+    title: "Rival's Tribute",
+    flavor: "An unseen pact wrests a treasure from your grasp and bears it to your rival.",
   },
 };
 
@@ -1129,52 +1135,70 @@ const EXTRA_POSE_BG_BY_HEIGHT = {
 //   "battle_pose"  — player-initiated during pose selection
 //   "battle_loss"  — game-triggered after a fully resolved round loss
 const SORCERIES = [
+  // ----- ITEMS (panel section 1) ---------------------------------------
   {
     id: "mantle_of_mist",
     name: "Mantle of Mist",
     trigger: "fight_land",
-    description: "On landing on a fight tile. The game asks if you slip past unseen. Yes spends the sorcery and skips the fight entirely. Cannot be used on the boss tile.",
+    category: "item",
+    description: "On landing on a fight tile. The game asks if you slip past unseen. Yes spends the item and skips the fight entirely. Cannot be used on the boss tile.",
   },
   {
     id: "magic_compass",
     name: "Magic Compass",
     trigger: "pre_roll",
+    category: "item",
     description: "At the start of your turn, before rolling. Choose direction (forward or backward) and exact distance (1, 2, or 3 tiles). Move instead of rolling. The destination tile's event resolves normally.",
   },
   {
     id: "ancient_key",
     name: "Ancient Key",
     trigger: "pre_roll",
-    description: "At the start of your turn, before rolling. Jump one full row up (backward) or down (forward) from your current position. Only usable from a normal tile.",
+    category: "item",
+    description: "At the start of your turn, before rolling. Jump one full row up (backward) or down (forward) from your current position. Usable from any tile.",
   },
   {
     id: "safety_rope",
     name: "Safety Rope",
     trigger: "hole_land",
-    description: "On landing on a hole tile. The game asks if you anchor yourself. Yes spends the sorcery and you stay on the hole tile. No lets the fall proceed and preserves the rope.",
-  },
-  {
-    id: "sixth_sense",
-    name: "Sixth Sense",
-    trigger: "trap_land",
-    description: "On landing on a trap tile. The trap's full effect is revealed first; only then are you asked whether to spend this sorcery to block it entirely.",
+    category: "item",
+    description: "On landing on a hole tile. The game asks if you anchor yourself. Yes spends the item and you stay on the hole tile. No lets the fall proceed and preserves the rope.",
   },
   {
     id: "magic_powder",
     name: "Magic Powder",
     trigger: "battle_dice",
+    category: "item",
     description: "During a battle round decided by dice. If the natural dice roll goes against you, the game offers a single re-roll. The new result stands — you can still lose.",
+  },
+  {
+    id: "sword",
+    name: "Sword",
+    trigger: "battle_passive",
+    category: "item",
+    persistent: true,
+    description: "A persistent magical sword. While held, every dice tiebreaker in a battle round rolls two dice for you and keeps the higher result. Never spent on use — only lost via Sorcery Theft or Rival's Tribute traps.",
+  },
+  // ----- SORCERIES (panel section 2) ----------------------------------
+  {
+    id: "sixth_sense",
+    name: "Sixth Sense",
+    trigger: "trap_land",
+    category: "sorcery",
+    description: "On landing on a trap tile. The trap's full effect is revealed first; only then are you asked whether to spend this sorcery to block it entirely.",
   },
   {
     id: "oracle_eye",
     name: "Oracle's Eye",
     trigger: "battle_pose",
+    category: "sorcery",
     description: "During pose selection, before you commit. Reveals the enemy's pose (type and height) for the current round. Applies only to that round.",
   },
   {
     id: "iron_bell",
     name: "Iron Bell",
     trigger: "battle_loss",
+    category: "sorcery",
     description: "After a battle round fully resolves as a loss. The round is cancelled and replayed from pose selection. You can still lose the replay.",
   },
 ];
@@ -1451,15 +1475,87 @@ const SORCERY_ICONS = {
   magic_compass:  "🧭",
   ancient_key:    "🗝️",
   safety_rope:    "🪢",
-  sixth_sense:    "👁",
   magic_powder:   "✨",
+  sword:          "🗡️",
+  sixth_sense:    "👁",
   oracle_eye:     "🔮",
   iron_bell:      "🔔",
 };
 
+function BattleLogPanel({ shaolinLog, ninjaLog }) {
+  function column(label, accent, log) {
+    const wins = log.filter((e) => e.outcome === "won").length;
+    const losses = log.filter((e) => e.outcome === "lost").length;
+    return (
+      <div style={{ flex: "1 1 0", minWidth: 220 }}>
+        <div style={{
+          display: "flex", justifyContent: "space-between", alignItems: "baseline",
+          marginBottom: 4,
+        }}>
+          <strong style={{ color: accent }}>{label}</strong>
+          <span style={{ color: "#7a5d00", fontSize: 11 }}>
+            {wins}W / {losses}L
+          </span>
+        </div>
+        <div style={{
+          maxHeight: 220,
+          overflowY: "auto",
+          background: "#fdf4dc",
+          border: "1px solid #e4d3a5",
+          borderRadius: 6,
+          padding: "6px 8px",
+          fontSize: 12,
+        }}>
+          {log.length === 0 ? (
+            <em style={{ color: "#9b8050" }}>No battles yet</em>
+          ) : (
+            log.map((entry, i) => {
+              const won = entry.outcome === "won";
+              return (
+                <div key={i} style={{
+                  display: "flex", justifyContent: "space-between",
+                  padding: "2px 0",
+                  borderBottom: i < log.length - 1 ? "1px dashed #e4d3a5" : "none",
+                }}>
+                  <span>{NINJA[entry.ninjaType].name}</span>
+                  <span style={{ color: won ? "#1c6f2c" : "#a8261b", fontWeight: 600 }}>
+                    {won ? "Victory" : "Defeat"}
+                  </span>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div style={{
+      background: "#fff8e7",
+      border: "1px solid #c4ad7b",
+      borderRadius: 8,
+      padding: 12,
+      color: PALETTE.text,
+      fontFamily: "sans-serif",
+    }}>
+      <div style={{
+        fontSize: 13, fontWeight: 700, color: "#7a5500",
+        letterSpacing: 0.4, marginBottom: 8,
+        borderBottom: "1px solid #c4ad7b", paddingBottom: 6,
+      }}>
+        ⚔ Battle Log
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        {column("🥋 Shaolin Master", "#22c55e", shaolinLog)}
+        {column("🥷 Ninja", "#ff5252", ninjaLog)}
+      </div>
+    </div>
+  );
+}
+
 function PlayerPanel({
   character, label,
-  battleLog, sorceries, extraPoses,
+  sorceries, extraPoses,
   held = false, lockedType = null,
   tile = null,
   isMyTurn = false,
@@ -1473,8 +1569,6 @@ function PlayerPanel({
 }) {
   const hasCurse = held || lockedType != null;
   const accent = character === "shaolin" ? "#22c55e" : "#ff5252";
-  const wins = battleLog.filter((e) => e.outcome === "won").length;
-  const losses = battleLog.filter((e) => e.outcome === "lost").length;
   return (
     <div style={{
       flex: "1 1 0",
@@ -1556,40 +1650,60 @@ function PlayerPanel({
         </div>
       )}
 
-      <div>
-        <strong>Sorceries</strong>
-        <div style={{
-          marginTop: 4,
-          background: "#fdf4dc",
-          border: "1px solid #e4d3a5",
-          borderRadius: 6,
-          padding: "6px 8px",
-          minHeight: 36,
-        }}>
-          {sorceries.length === 0 ? (
-            <em style={{ color: "#9b8050" }}>No sorceries</em>
-          ) : (
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-              {sorceries.map((s, i) => (
-                <span
-                  key={s.id + "_" + i}
-                  title={s.description}
-                  style={{
-                    background: "#fff8e7",
-                    border: "1px solid #c4ad7b",
-                    borderRadius: 12,
-                    padding: "3px 9px",
-                    fontSize: 12,
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {SORCERY_ICONS[s.id] || "🔮"} {s.name}
+      {(() => {
+        // Single combined "Items & Sorceries" section. Persistence (Sword)
+        // is still surfaced with a small lock glyph on the chip.
+        function chip(s, i) {
+          const def = SORCERY_BY_ID[s.id];
+          const persistent = !!def?.persistent;
+          return (
+            <span
+              key={s.id + "_" + i}
+              title={s.description + (persistent ? " — persistent (never spent on use)" : "")}
+              style={{
+                background: persistent ? "#f3e6c4" : "#fff8e7",
+                border: persistent ? "1px solid #7a5500" : "1px solid #c4ad7b",
+                borderRadius: 12,
+                padding: "3px 9px",
+                fontSize: 12,
+                whiteSpace: "nowrap",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 4,
+              }}
+            >
+              <span>{SORCERY_ICONS[s.id] || "🔮"}</span>
+              <span>{s.name}</span>
+              {persistent && (
+                <span title="Persistent — kept until lost via a trap" style={{ fontSize: 10, color: "#7a5500" }}>
+                  🔒
                 </span>
-              ))}
+              )}
+            </span>
+          );
+        }
+        return (
+          <div>
+            <strong>Items &amp; Sorceries</strong>
+            <div style={{
+              marginTop: 4,
+              background: "#fdf4dc",
+              border: "1px solid #e4d3a5",
+              borderRadius: 6,
+              padding: "6px 8px",
+              minHeight: 36,
+            }}>
+              {sorceries.length === 0 ? (
+                <em style={{ color: "#9b8050" }}>No items or sorceries</em>
+              ) : (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  {sorceries.map(chip)}
+                </div>
+              )}
             </div>
-          )}
-        </div>
-      </div>
+          </div>
+        );
+      })()}
 
       <div>
         <strong>Secret Techniques</strong>
@@ -1648,42 +1762,6 @@ function PlayerPanel({
         </div>
       </div>
 
-      <div>
-        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-          <strong>Battle Log</strong>
-          <span style={{ color: "#7a5d00" }}>
-            {wins}W / {losses}L
-          </span>
-        </div>
-        <div style={{
-          maxHeight: 130,
-          overflowY: "auto",
-          background: "#fdf4dc",
-          border: "1px solid #e4d3a5",
-          borderRadius: 6,
-          padding: "6px 8px",
-        }}>
-          {battleLog.length === 0 ? (
-            <em style={{ color: "#9b8050" }}>No battles yet</em>
-          ) : (
-            battleLog.map((entry, i) => {
-              const won = entry.outcome === "won";
-              return (
-                <div key={i} style={{
-                  display: "flex", justifyContent: "space-between",
-                  padding: "2px 0",
-                  borderBottom: i < battleLog.length - 1 ? "1px dashed #e4d3a5" : "none",
-                }}>
-                  <span>{NINJA[entry.ninjaType].name}</span>
-                  <span style={{ color: won ? "#1c6f2c" : "#a8261b", fontWeight: 600 }}>
-                    {won ? "Victory" : "Defeat"}
-                  </span>
-                </div>
-              );
-            })
-          )}
-        </div>
-      </div>
 
       <button
         onClick={onRoll}
@@ -1743,7 +1821,7 @@ function PlayerPanel({
       <button
         onClick={onUseSorcery}
         disabled={!hasUsablePreRoll || !isMyTurn}
-        title={hasUsablePreRoll && isMyTurn ? "Use a sorcery before rolling" : "No usable sorcery on this turn"}
+        title={hasUsablePreRoll && isMyTurn ? "Use an item before rolling" : "No usable item on this turn"}
         style={{
           padding: "7px 10px",
           borderRadius: 6,
@@ -1758,7 +1836,7 @@ function PlayerPanel({
           width: "100%",
         }}
       >
-        ✦ Use Sorcery
+        ✦ Use Item
       </button>
 
       <div style={{
@@ -1826,7 +1904,7 @@ function TrapSorceryTheftModal({ sorceries, onChoose }) {
           {info.flavor}
         </p>
         <p style={{ fontSize: 13, fontWeight: 600, marginBottom: 12, color: "#5a4317" }}>
-          Choose a sorcery to surrender:
+          Choose an item or sorcery to surrender:
         </p>
         <div style={{
           display: "flex", flexWrap: "wrap", gap: 8,
@@ -1862,7 +1940,7 @@ function TrapSorceryTheftModal({ sorceries, onChoose }) {
           disabled={!selected}
           onClick={() => onChoose(selected)}
         >
-          Surrender chosen sorcery
+          Surrender chosen
         </button>
       </Draggable>
     </div>
@@ -1931,6 +2009,80 @@ function TrapPoseTheftModal({ poses, onChoose }) {
         >
           Surrender chosen pose
         </button>
+      </Draggable>
+    </div>
+  );
+}
+
+function TrapTributeModal({ item, onClose }) {
+  const info = TRAP_INFO.rivals_tribute;
+  const isSorcery = item.kind === "sorcery";
+  const itemIcon = isSorcery ? (SORCERY_ICONS[item.id] || "🔮") : "✦";
+  const extraImg = !isSorcery ? EXTRA_POSE_IMAGES[item.id] : null;
+  const extraTone = !isSorcery ? EXTRA_POSE_BG_BY_HEIGHT[item.height] : null;
+  return (
+    <div style={MODAL_OVERLAY}>
+      <Draggable style={{
+        ...MODAL_BOX, maxWidth: 460, width: "92%",
+        border: "2px solid #8a1620",
+        boxShadow: "0 8px 40px rgba(0,0,0,0.7), 0 0 24px rgba(138,22,32,0.45)",
+      }}>
+        <div style={{ fontSize: 13, color: "#8a1620", fontWeight: 700, marginBottom: 4, letterSpacing: 0.6 }}>
+          ⚠ TRAP TRIGGERED
+        </div>
+        <div style={{ fontSize: 40, marginBottom: 8 }}>{info.icon}</div>
+        <h2 style={{ margin: "0 0 10px 0", fontSize: 20 }}>{info.title}</h2>
+        <p style={{ fontSize: 13, fontStyle: "italic", lineHeight: 1.55, marginBottom: 14, color: "#6b4f1a" }}>
+          {info.flavor}
+        </p>
+        <p style={{ fontSize: 14, fontWeight: 600, lineHeight: 1.55, marginBottom: 14, color: "#5a4317" }}>
+          The trap springs against you.
+        </p>
+        <div style={{
+          display: "inline-flex", alignItems: "center", gap: 12,
+          background: "#fff8e7",
+          border: "1px solid #c4ad7b",
+          borderRadius: 8,
+          padding: "10px 14px",
+          marginBottom: 16,
+        }}>
+          {extraImg ? (
+            <div style={{
+              width: 48, height: 48,
+              flex: "0 0 auto",
+              background: extraTone ? extraTone.bg : "#fff",
+              borderRadius: 4,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              overflow: "hidden",
+              boxShadow: "inset 0 0 0 1px rgba(212,175,55,0.55)",
+            }}>
+              <img
+                src={extraImg}
+                alt={item.name}
+                style={{
+                  maxWidth: "100%", maxHeight: "100%",
+                  objectFit: "contain",
+                  transform: "scale(1.2)",
+                  display: "block",
+                }}
+              />
+            </div>
+          ) : (
+            <span style={{ fontSize: 28 }}>{itemIcon}</span>
+          )}
+          <div style={{ textAlign: "left" }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: PALETTE.text }}>{item.name}</div>
+            <div style={{ fontSize: 11, color: "#6b4f1a", marginTop: 2 }}>
+              {isSorcery
+                ? "Sorcery"
+                : `Secret Technique — ${item.type} / ${item.height}`}
+            </div>
+          </div>
+        </div>
+        <p style={{ fontSize: 14, fontWeight: 600, lineHeight: 1.55, marginBottom: 22, color: "#5a4317" }}>
+          It passes into your rival's hands.
+        </p>
+        <button style={BTN_PRIMARY} onClick={onClose}>Continue</button>
       </Draggable>
     </div>
   );
@@ -2182,7 +2334,14 @@ function ItemModal({ variant, item, onClose }) {
     );
   }
   const isSorcery = item.kind === "sorcery";
+  const def = isSorcery ? SORCERY_BY_ID[item.id] : null;
+  const isItem = def && def.category === "item";
+  const isPersistent = !!def?.persistent;
   const extraImg = !isSorcery ? EXTRA_POSE_IMAGES[item.id] : null;
+  let header;
+  if (!isSorcery) header = "✦ RARE TECHNIQUE SCROLL ✦";
+  else if (isItem) header = isPersistent ? "PERSISTENT ITEM FOUND" : "ITEM FOUND";
+  else header = "SORCERY FOUND";
   return (
     <div style={MODAL_OVERLAY}>
       <Draggable style={{
@@ -2197,9 +2356,12 @@ function ItemModal({ variant, item, onClose }) {
           color: isSorcery ? "#7a5500" : "#8a6f1c",
           fontWeight: 700, marginBottom: 4, letterSpacing: 0.5,
         }}>
-          {isSorcery ? "SORCERY FOUND" : "✦ RARE TECHNIQUE SCROLL ✦"}
+          {header}
         </div>
-        <h2 style={{ margin: "0 0 12px 0", fontSize: 22 }}>{item.name}</h2>
+        <h2 style={{ margin: "0 0 12px 0", fontSize: 22 }}>
+          {SORCERY_ICONS[item.id] && isSorcery ? `${SORCERY_ICONS[item.id]} ` : ""}{item.name}
+          {isPersistent && <span style={{ fontSize: 14, color: "#7a5500", marginLeft: 6 }}>🔒</span>}
+        </h2>
         {!isSorcery && extraImg ? (
           <div style={{
             width: "100%", height: 260,
@@ -2248,7 +2410,7 @@ function ItemModal({ variant, item, onClose }) {
             color: "#8a9a7a", fontSize: 13,
             border: "1px solid #bbc9a8",
           }}>
-            [{isSorcery ? "Sorcery" : "Pose scroll"} illustration — placeholder]
+            [{isSorcery ? (isItem ? "Item" : "Sorcery") : "Pose scroll"} illustration — placeholder]
           </div>
         )}
         {!isSorcery && (
@@ -2518,15 +2680,40 @@ function BattleScreen({
     }
     setPhase("reveal");
   }
+  function rollOnce() {
+    // One synchronous dice roll with the Sword bonus applied per side.
+    // If a player holds the Sword, roll two d6 for them and keep the higher
+    // result. Returns { p1, p2, p1Extra, p2Extra, p1Sword, p2Sword }.
+    const p1Sword = playerHas("p1", "sword");
+    const p2Sword = playerHas("p2", "sword");
+    let p1, p2, p1Extra = null, p2Extra = null;
+    if (p1Sword) {
+      const a1 = Math.floor(Math.random() * 6) + 1;
+      const a2 = Math.floor(Math.random() * 6) + 1;
+      p1 = Math.max(a1, a2);
+      p1Extra = { a: a1, b: a2 };
+    } else {
+      p1 = Math.floor(Math.random() * 6) + 1;
+    }
+    if (p2Sword) {
+      const b1 = Math.floor(Math.random() * 6) + 1;
+      const b2 = Math.floor(Math.random() * 6) + 1;
+      p2 = Math.max(b1, b2);
+      p2Extra = { a: b1, b: b2 };
+    } else {
+      p2 = Math.floor(Math.random() * 6) + 1;
+    }
+    return { p1, p2, p1Extra, p2Extra, p1Sword, p2Sword };
+  }
+
   function rollDice() {
-    let a, b, tries = 0;
+    let res, tries = 0;
     do {
-      a = Math.floor(Math.random() * 6) + 1;
-      b = Math.floor(Math.random() * 6) + 1;
+      res = rollOnce();
       tries++;
-    } while (a === b);
-    setDice({ p1: a, p2: b, tries });
-    const winner = a > b ? "p1" : "p2";
+    } while (res.p1 === res.p2);
+    setDice({ ...res, tries });
+    const winner = res.p1 > res.p2 ? "p1" : "p2";
     const loser = winner === "p1" ? "p2" : "p1";
     // Magic Powder: if the natural roll went against a player who holds it,
     // pause and offer a re-roll before locking in the result.
@@ -2542,15 +2729,15 @@ function BattleScreen({
     if (!who) return;
     onSpendSorcery(who, "magic_powder");
     setMagicPowderPending(null);
-    // Re-roll both dice; new result stands no matter what.
-    let a, b, tries = 0;
+    // Re-roll both dice; Sword bonus (if any) still applies. The new result
+    // stands no matter what.
+    let res, tries = 0;
     do {
-      a = Math.floor(Math.random() * 6) + 1;
-      b = Math.floor(Math.random() * 6) + 1;
+      res = rollOnce();
       tries++;
-    } while (a === b);
-    setDice({ p1: a, p2: b, tries });
-    setFinalWinner(a > b ? "p1" : "p2");
+    } while (res.p1 === res.p2);
+    setDice({ ...res, tries });
+    setFinalWinner(res.p1 > res.p2 ? "p1" : "p2");
   }
 
   function declineMagicPowder() {
@@ -2654,14 +2841,28 @@ function BattleScreen({
             // Oracle's Eye — reveal the enemy's pose for the current round.
             const playerHasOracle = playerHas(player, "oracle_eye");
             const enemyPose = player === "p1" ? p2Choice : p1Choice;
+            const enemyCharacter = player === "p1" ? p2Character : p1Character;
             const playerRevealed = player === "p1" ? revealedByP1 : revealedByP2;
             // Can reveal if: solo (we can pre-compute), OR enemy already chose.
             const canReveal = (player === "p1" && isSolo) || enemyPose !== null;
             if (!playerHasOracle && !playerRevealed) return null;
             if (playerRevealed && enemyPose) {
+              const enemyImg = poseImageFor(enemyCharacter, enemyPose);
+              // Match the pose card's background so the type reads at a glance.
+              const baseTypeColors = {
+                Strike: "#E2852E",
+                Block:  "#FFD45A",
+                Dodge:  "#BBCB64",
+              };
+              const isExtra = EXTRA_POSE_ID_SET.has(enemyPose.id);
+              const thumbBg = isExtra
+                ? EXTRA_POSE_BG_BY_HEIGHT[enemyPose.height]?.bg || baseTypeColors[enemyPose.type]
+                : baseTypeColors[enemyPose.type] || "#fff";
               return (
                 <div style={{
                   marginTop: 10,
+                  marginLeft: "auto",
+                  marginRight: "auto",
                   background: "#fff8e7",
                   border: "1px solid #c4ad7b",
                   borderRadius: 6,
@@ -2669,9 +2870,44 @@ function BattleScreen({
                   fontSize: 12,
                   color: "#3a2c12",
                   textAlign: "left",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 10,
                 }}>
-                  <strong style={{ color: "#7a5500" }}>🔮 Oracle's Eye:</strong>{" "}
-                  the enemy plays <strong>{enemyPose.type} / {enemyPose.height}</strong>.
+                  {enemyImg && (
+                    <div style={{
+                      width: 64, height: 64,
+                      flex: "0 0 auto",
+                      background: thumbBg,
+                      borderRadius: 4,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      overflow: "hidden",
+                      boxShadow: isExtra ? "inset 0 0 0 1px rgba(212,175,55,0.55)" : "none",
+                    }}>
+                      <img
+                        src={enemyImg}
+                        alt={enemyPose.name}
+                        style={{
+                          maxWidth: "100%",
+                          maxHeight: "100%",
+                          objectFit: "contain",
+                          display: "block",
+                          ...(isExtra ? { transform: "scale(1.2)" } : {}),
+                        }}
+                      />
+                    </div>
+                  )}
+                  <div>
+                    <div>
+                      <strong style={{ color: "#7a5500" }}>🔮 Oracle's Eye:</strong>{" "}
+                      the enemy plays <strong>{enemyPose.name}</strong>.
+                    </div>
+                    <div style={{ fontSize: 11, color: "#6b4f1a", marginTop: 2 }}>
+                      {enemyPose.type} / {enemyPose.height}
+                    </div>
+                  </div>
                 </div>
               );
             }
@@ -2681,19 +2917,35 @@ function BattleScreen({
                 onClick={() => useOracleEye(player)}
                 style={{
                   marginTop: 10,
+                  marginLeft: "auto",
+                  marginRight: "auto",
                   background: "#fff8e7",
                   border: "1px solid #7a5500",
                   borderRadius: 6,
-                  padding: "5px 10px",
+                  padding: "7px 12px",
                   fontFamily: "Georgia, serif",
                   fontSize: 12,
-                  fontWeight: 700,
                   color: "#5a4317",
                   cursor: "pointer",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 8,
+                  textAlign: "left",
                 }}
                 title={SORCERY_BY_ID.oracle_eye.description}
               >
-                🔮 Use Oracle's Eye (reveal enemy pose)
+                <span style={{ fontSize: 20, lineHeight: 1 }}>🔮</span>
+                <span>
+                  Cast the sorcery{" "}
+                  <strong style={{
+                    color: "#7a5500",
+                    fontStyle: "italic",
+                    letterSpacing: 0.3,
+                  }}>
+                    "Oracle's Eye"
+                  </strong>{" "}
+                  to reveal the enemy's move.
+                </span>
               </button>
             );
           })()}
@@ -2874,9 +3126,22 @@ function BattleScreen({
           {outcome.reason}
           {dice && (
             <div style={{ marginTop: 6 }}>
-              Dice: <strong>{p1Label}</strong> rolled {dice.p1},{" "}
-              <strong>{p2Label}</strong> rolled {dice.p2}
-              {dice.tries > 1 ? ` (after ${dice.tries - 1} tie re-roll${dice.tries > 2 ? "s" : ""})` : ""}.
+              <div>
+                Dice: <strong>{p1Label}</strong> rolled <strong>{dice.p1}</strong>
+                {dice.p1Sword && dice.p1Extra && (
+                  <span style={{ color: "#7a5500", fontStyle: "italic" }}>
+                    {" "}🗡️ Sword bonus: <strong>{dice.p1Extra.a}</strong> & <strong>{dice.p1Extra.b}</strong> — higher taken
+                  </span>
+                )}
+                ,{" "}
+                <strong>{p2Label}</strong> rolled <strong>{dice.p2}</strong>
+                {dice.p2Sword && dice.p2Extra && (
+                  <span style={{ color: "#7a5500", fontStyle: "italic" }}>
+                    {" "}🗡️ Sword bonus: <strong>{dice.p2Extra.a}</strong> & <strong>{dice.p2Extra.b}</strong> — higher taken
+                  </span>
+                )}
+                {dice.tries > 1 ? ` (after ${dice.tries - 1} tie re-roll${dice.tries > 2 ? "s" : ""})` : ""}.
+              </div>
             </div>
           )}
         </div>
@@ -2889,10 +3154,10 @@ function BattleScreen({
             padding: "12px 14px", marginBottom: 4,
           }}>
             <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 6, color: "#7a5500" }}>
-              ✨ Magic Powder
+              ✨ Magic Powder ({magicPowderPending === "p1" ? p1Label : p2Label})
             </div>
             <div style={{ fontSize: 13, color: "#5a4317", marginBottom: 12, fontStyle: "italic" }}>
-              The dice went against you. Use Magic Powder to re-roll? The new result will stand.
+              The dice went against <strong>{magicPowderPending === "p1" ? p1Label : p2Label}</strong>. Use Magic Powder to re-roll? The new result will stand.
             </div>
             <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
               <button style={BTN_PRIMARY} onClick={useMagicPowder}>Re-roll — spend it</button>
@@ -2918,10 +3183,10 @@ function BattleScreen({
                   padding: "12px 14px", marginBottom: 4,
                 }}>
                   <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 6, color: "#7a5500" }}>
-                    🔔 Iron Bell
+                    🔔 Iron Bell ({loserLabel})
                   </div>
                   <div style={{ fontSize: 13, color: "#5a4317", marginBottom: 12, fontStyle: "italic" }}>
-                    This round was lost by {loserLabel}. Ring the Iron Bell and replay it from pose selection?
+                    This round was lost by <strong>{loserLabel}</strong>. Ring the Iron Bell and replay it from pose selection?
                   </div>
                   <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
                     <button style={BTN_PRIMARY} onClick={() => ringIronBell(loser)}>Ring it — spend it</button>
@@ -3007,8 +3272,12 @@ export default function ShaolinGame() {
   const [ninjaLockedType, setNinjaLockedType] = useState(null);
   // Each player draws traps from their OWN shuffled deck of 4 (out of 6)
   // and tracks which trap tiles they have personally triggered.
-  const [shaolinTrapDeck, setShaolinTrapDeck] = useState([]);
-  const [ninjaTrapDeck, setNinjaTrapDeck] = useState([]);
+  // Per-player set of trap TYPES already encountered. Each type fires at most
+  // once per game per player. Replaces the older pre-shuffled deck approach;
+  // the trap type is now picked live at landing from the remaining pool, so
+  // eligibility filters like Rival's Tribute can be applied at decision time.
+  const [shaolinUsedTrapTypes, setShaolinUsedTrapTypes] = useState(() => new Set());
+  const [ninjaUsedTrapTypes, setNinjaUsedTrapTypes] = useState(() => new Set());
   const [shaolinTrappedTiles, setShaolinTrappedTiles] = useState(() => new Set());
   const [ninjaTrappedTiles, setNinjaTrappedTiles] = useState(() => new Set());
   const [skipNotice, setSkipNotice] = useState(null); // transient "turn skipped" banner
@@ -3059,8 +3328,8 @@ export default function ShaolinGame() {
     setNinjaHeld(false);
     setShaolinLockedType(null);
     setNinjaLockedType(null);
-    setShaolinTrapDeck(shuffle(ALL_TRAP_TYPES).slice(0, 4));
-    setNinjaTrapDeck(shuffle(ALL_TRAP_TYPES).slice(0, 4));
+    setShaolinUsedTrapTypes(new Set());
+    setNinjaUsedTrapTypes(new Set());
     setShaolinTrappedTiles(new Set());
     setNinjaTrappedTiles(new Set());
     setSkipNotice(null);
@@ -3092,20 +3361,19 @@ export default function ShaolinGame() {
     if (modal) return;
     const inv = character === "shaolin" ? shaolinInventory : ninjaInventory;
     const currentPos = character === "shaolin" ? shaolinTile : ninjaTile;
-    const onNormalTile = currentPos !== null && board.tiles[currentPos]?.type === T.NORMAL;
 
     // Filter pre-roll-trigger sorceries the player can actually use right now.
     const usable = inv.sorceries.filter((s) => {
       const def = SORCERY_BY_ID[s.id];
       if (!def || def.trigger !== "pre_roll") return false;
-      if (s.id === "ancient_key" && !onNormalTile) return false;
+      if (s.id === "ancient_key" && currentPos === null) return false;
       if (s.id === "magic_compass" && currentPos === null) return false;
       return true;
     });
 
     const chosenId = await showModal({
       type: "sorcery_picker",
-      title: "Use a sorcery before rolling",
+      title: "Use an item before rolling",
       sorceries: usable,
     });
     setModal(null);
@@ -3122,8 +3390,7 @@ export default function ShaolinGame() {
     }
 
     if (chosenId === "ancient_key") {
-      // Re-verify still on a normal tile (it shouldn't have changed, but be safe).
-      if (!onNormalTile) return;
+      if (currentPos === null) return;
       const choice = await showModal({ type: "ancient_key", currentTile: currentPos });
       setModal(null);
       if (!choice) return;
@@ -3149,52 +3416,110 @@ export default function ShaolinGame() {
     let current = character === "shaolin" ? shaolinTile : ninjaTile;
 
     // Per-player trap-state mirrors. We snapshot at rollFor entry and mutate
-    // locally so cascades (setback → another trap) see the up-to-date deck.
+    // locally so cascades (setback → another trap) see the up-to-date state.
     const trapState = {
       shaolin: {
-        deck: [...shaolinTrapDeck],
+        usedTypes: new Set(shaolinUsedTrapTypes),
         triggered: new Set(shaolinTrappedTiles),
         dirty: false,
       },
       ninja: {
-        deck: [...ninjaTrapDeck],
+        usedTypes: new Set(ninjaUsedTrapTypes),
         triggered: new Set(ninjaTrappedTiles),
         dirty: false,
       },
     };
 
-    // Local sorcery mirror, in case multiple board-triggered sorceries
-    // fire within the same cascade (rare but possible).
-    const sorcMirror = {
-      shaolin: [...shaolinInventory.sorceries],
-      ninja: [...ninjaInventory.sorceries],
+    // Local inventory mirror, tracking BOTH players' sorceries and extra
+    // poses. Lets multiple board-triggered sorceries / traps fire correctly
+    // within the same cascade (rare but possible).
+    const invMirror = {
+      shaolin: {
+        sorceries: [...shaolinInventory.sorceries],
+        extraPoses: [...shaolinInventory.extraPoses],
+      },
+      ninja: {
+        sorceries: [...ninjaInventory.sorceries],
+        extraPoses: [...ninjaInventory.extraPoses],
+      },
     };
     function holdsSorcery(char, id) {
-      return sorcMirror[char].some((s) => s.id === id);
+      return invMirror[char].sorceries.some((s) => s.id === id);
     }
     function spendSorcery(char, id) {
-      sorcMirror[char] = sorcMirror[char].filter((s) => s.id !== id);
+      invMirror[char].sorceries = invMirror[char].sorceries.filter((s) => s.id !== id);
       const setInv = char === "shaolin" ? setShaolinInventory : setNinjaInventory;
       setInv((prev) => ({ ...prev, sorceries: prev.sorceries.filter((s) => s.id !== id) }));
+    }
+    function hasItemsToSteal(char) {
+      // True if the landing player has at least one transferable thing.
+      // Sword is globally unique — exclude it from the count when the rival
+      // already holds it, so we don't fire Rival's Tribute when nothing can
+      // actually move between inventories.
+      if (invMirror[char].extraPoses.length > 0) return true;
+      const rival = char === "shaolin" ? "ninja" : "shaolin";
+      const rivalHasSword = invMirror[rival].sorceries.some((s) => s.id === "sword");
+      return invMirror[char].sorceries.some((s) => !(s.id === "sword" && rivalHasSword));
+    }
+    function pickRandomTributeItem(char) {
+      const sorcs = invMirror[char].sorceries.map((s) => ({ kind: "sorcery", ...s }));
+      const extras = invMirror[char].extraPoses.map((p) => ({ kind: "extra_pose", ...p }));
+      let pool = [...sorcs, ...extras];
+      // Sword is globally unique — if the rival already holds it, exclude
+      // Sword from the candidate pool so we pick a different item.
+      const rival = char === "shaolin" ? "ninja" : "shaolin";
+      const rivalHasSword = invMirror[rival].sorceries.some((s) => s.id === "sword");
+      if (rivalHasSword) {
+        pool = pool.filter((it) => !(it.kind === "sorcery" && it.id === "sword"));
+      }
+      if (pool.length === 0) return null;
+      return pool[Math.floor(Math.random() * pool.length)];
+    }
+    function transferItem(fromChar, toChar, item) {
+      // Mutate both local mirrors to keep cascades consistent.
+      if (item.kind === "sorcery") {
+        invMirror[fromChar].sorceries = invMirror[fromChar].sorceries.filter((s) => s.id !== item.id);
+        invMirror[toChar].sorceries.push({ id: item.id, name: item.name, description: item.description });
+      } else {
+        invMirror[fromChar].extraPoses = invMirror[fromChar].extraPoses.filter((p) => p.id !== item.id);
+        invMirror[toChar].extraPoses.push({ id: item.id, name: item.name, type: item.type, height: item.height });
+      }
+      // Mirror those updates into React state.
+      const setFrom = fromChar === "shaolin" ? setShaolinInventory : setNinjaInventory;
+      const setTo = toChar === "shaolin" ? setShaolinInventory : setNinjaInventory;
+      setFrom((prev) => {
+        if (item.kind === "sorcery") {
+          return { ...prev, sorceries: prev.sorceries.filter((s) => s.id !== item.id) };
+        }
+        return { ...prev, extraPoses: prev.extraPoses.filter((p) => p.id !== item.id) };
+      });
+      setTo((prev) => {
+        if (item.kind === "sorcery") {
+          return { ...prev, sorceries: [...prev.sorceries, { id: item.id, name: item.name, description: item.description }] };
+        }
+        return { ...prev, extraPoses: [...prev.extraPoses, { id: item.id, name: item.name, type: item.type, height: item.height }] };
+      });
     }
 
     // Resolves the landing event on `tile` (chip is already shown there).
     // Returns the final tile position after the event (and any cascading
     // events triggered by a fight-loss setback) resolves.
-    async function resolveLanding(tile) {
+    async function resolveLanding(tile, opts = {}) {
       const t = tiles[tile];
 
       if (t.type === T.HOLE) {
         await sleep(400);
-        // Safety Rope: offered before the fall executes.
-        if (holdsSorcery(character, "safety_rope")) {
+        // Safety Rope: offered before the fall executes. The for-loop sets
+        // `skipRopeCheck` when it has already asked the player about the rope,
+        // so we don't double-prompt for the same hole.
+        if (!opts.skipRopeCheck && holdsSorcery(character, "safety_rope")) {
           const use = await showModal({
             type: "sorcery_confirm",
             sorceryId: "safety_rope",
             title: "Safety Rope",
-            prompt: "You hold the Safety Rope. Anchor yourself and stay?",
-            detail: "Spends the sorcery and you stay on the hole tile. Refusing lets you fall and preserves the rope.",
-            yesLabel: "Anchor — spend it",
+            prompt: "You hold the Safety Rope. Anchor yourself and stay on this hole?",
+            detail: "Spends the sorcery — your chip stays on the hole tile.",
+            yesLabel: "Use the rope",
             noLabel: "Let me fall",
           });
           setModal(null);
@@ -3213,7 +3538,11 @@ export default function ShaolinGame() {
           }
         }
         setTile(t.dest);
-        return t.dest;
+        await sleep(200);
+        // Trigger the destination tile's normal landing event (item, fight,
+        // trap, etc.). Hole landings can never themselves be holes by board
+        // rules, so this won't recurse into another fall.
+        return await resolveLanding(t.dest);
       }
 
       if (t.type === T.LADDER) {
@@ -3236,12 +3565,20 @@ export default function ShaolinGame() {
           // Already sprung for this player — silent pass-through.
           return tile;
         }
-        if (playerTrap.deck.length === 0) {
-          // Player has exhausted their trap deck — silent pass-through.
+        // Build the live pool: every trap type minus those this player has
+        // already encountered. Rival's Tribute is then filtered out if the
+        // landing player has nothing to give up.
+        let pool = ALL_TRAP_TYPES.filter((typ) => !playerTrap.usedTypes.has(typ));
+        if (!hasItemsToSteal(character)) {
+          pool = pool.filter((typ) => typ !== "rivals_tribute");
+        }
+        if (pool.length === 0) {
+          // Nothing left this player can suffer — silent pass-through.
           return tile;
         }
         await sleep(400);
-        const trapType = playerTrap.deck.shift();
+        const trapType = pool[Math.floor(Math.random() * pool.length)];
+        playerTrap.usedTypes.add(trapType);
         playerTrap.triggered.add(tile);
         playerTrap.dirty = true;
 
@@ -3254,6 +3591,7 @@ export default function ShaolinGame() {
             setback: "You would be swept 2–4 tiles backward.",
             battle_log_modifier: "Your greatest recent victory would be erased from history.",
             pose_lock: "All three stances of one type would be sealed for your next battle.",
+            rivals_tribute: "One of your sorceries or extra poses would be torn away and given to your rival.",
           };
           const info = TRAP_INFO[trapType] || {};
           const use = await showModal({
@@ -3281,13 +3619,14 @@ export default function ShaolinGame() {
         }
 
         if (trapType === "sorcery_theft") {
-          const inv = character === "shaolin" ? shaolinInventory : ninjaInventory;
-          if (inv.sorceries.length === 0) {
+          const live = invMirror[character].sorceries;
+          if (live.length === 0) {
             await showModal({ type: "trap_announce", trapType, message: "The thief finds nothing and retreats." });
             setModal(null);
           } else {
-            const chosenId = await showModal({ type: "trap_sorcery_theft", sorceries: inv.sorceries });
+            const chosenId = await showModal({ type: "trap_sorcery_theft", sorceries: live });
             setModal(null);
+            invMirror[character].sorceries = invMirror[character].sorceries.filter((s) => s.id !== chosenId);
             const setInv = character === "shaolin" ? setShaolinInventory : setNinjaInventory;
             setInv((prev) => ({ ...prev, sorceries: prev.sorceries.filter((s) => s.id !== chosenId) }));
           }
@@ -3295,13 +3634,14 @@ export default function ShaolinGame() {
         }
 
         if (trapType === "pose_theft") {
-          const inv = character === "shaolin" ? shaolinInventory : ninjaInventory;
-          if (inv.extraPoses.length === 0) {
+          const live = invMirror[character].extraPoses;
+          if (live.length === 0) {
             await showModal({ type: "trap_announce", trapType, message: "The seal finds nothing to suppress." });
             setModal(null);
           } else {
-            const chosenId = await showModal({ type: "trap_pose_theft", poses: inv.extraPoses });
+            const chosenId = await showModal({ type: "trap_pose_theft", poses: live });
             setModal(null);
+            invMirror[character].extraPoses = invMirror[character].extraPoses.filter((p) => p.id !== chosenId);
             const setInv = character === "shaolin" ? setShaolinInventory : setNinjaInventory;
             setInv((prev) => ({ ...prev, extraPoses: prev.extraPoses.filter((p) => p.id !== chosenId) }));
           }
@@ -3365,6 +3705,17 @@ export default function ShaolinGame() {
           return tile;
         }
 
+        if (trapType === "rivals_tribute") {
+          const other = character === "shaolin" ? "ninja" : "shaolin";
+          const taken = pickRandomTributeItem(character);
+          // taken is guaranteed non-null — the eligibility filter only allowed
+          // rivals_tribute into the pool when the player has something to give.
+          transferItem(character, other, taken);
+          await showModal({ type: "trap_tribute", item: taken });
+          setModal(null);
+          return tile;
+        }
+
         return tile;
       }
 
@@ -3378,8 +3729,15 @@ export default function ShaolinGame() {
         }
         const inv = character === "shaolin" ? shaolinInventory : ninjaInventory;
         const heldSorceryIds = new Set(inv.sorceries.map((s) => s.id));
-        const availableSorceries = SORCERIES.filter((s) => !heldSorceryIds.has(s.id))
-          .map((s) => ({ kind: "sorcery", ...s }));
+        // Sword is globally unique — exclude it from this player's pool if
+        // the OTHER player currently holds it.
+        const otherChar = character === "shaolin" ? "ninja" : "shaolin";
+        const otherHoldsSword = invMirror[otherChar].sorceries.some((s) => s.id === "sword");
+        const availableSorceries = SORCERIES.filter((s) => {
+          if (heldSorceryIds.has(s.id)) return false;
+          if (s.id === "sword" && otherHoldsSword) return false;
+          return true;
+        }).map((s) => ({ kind: "sorcery", ...s }));
         const extras = character === "shaolin" ? EXTRA_POSES_SHAOLIN : EXTRA_POSES_NINJA;
         const heldExtraIds = new Set(inv.extraPoses.map((p) => p.id));
         const availableExtras = extras.filter((p) => !heldExtraIds.has(p.id))
@@ -3502,11 +3860,11 @@ export default function ShaolinGame() {
       current = await resolveLanding(directTarget);
 
       if (trapState.shaolin.dirty) {
-        setShaolinTrapDeck(trapState.shaolin.deck);
+        setShaolinUsedTrapTypes(trapState.shaolin.usedTypes);
         setShaolinTrappedTiles(trapState.shaolin.triggered);
       }
       if (trapState.ninja.dirty) {
-        setNinjaTrapDeck(trapState.ninja.deck);
+        setNinjaUsedTrapTypes(trapState.ninja.usedTypes);
         setNinjaTrappedTiles(trapState.ninja.triggered);
       }
       setIsRolling(false);
@@ -3549,9 +3907,37 @@ export default function ShaolinGame() {
       const isLastStep = i === steps - 1;
       const t = tiles[next].type;
 
-      // Hole is a physical gap — falling is unavoidable.
+      // Hole — the player can use Safety Rope (if held) to cross the gap and
+      // continue their dice move. Without the rope (or if they refuse), the
+      // chip falls to the destination tile and the normal landing event there
+      // resolves (e.g. item pickup, fight, trap).
       if (t === T.HOLE) {
-        current = await resolveLanding(next);
+        if (holdsSorcery(character, "safety_rope")) {
+          await sleep(400);
+          const use = await showModal({
+            type: "sorcery_confirm",
+            sorceryId: "safety_rope",
+            title: "Safety Rope",
+            prompt: isLastStep
+              ? "You hold the Safety Rope. Anchor yourself on the hole and stay?"
+              : "You hold the Safety Rope. Use it to cross the hole and continue your move?",
+            detail: isLastStep
+              ? "Spends the sorcery — your chip stays on the hole tile."
+              : "Spends the sorcery — your chip passes over the hole and finishes the dice move.",
+            yesLabel: "Use the rope",
+            noLabel: "Let me fall",
+          });
+          setModal(null);
+          if (use) {
+            spendSorcery(character, "safety_rope");
+            if (!isLastStep) {
+              await sleep(300);
+              continue;
+            }
+            break;
+          }
+        }
+        current = await resolveLanding(next, { skipRopeCheck: true });
         break;
       }
 
@@ -3598,11 +3984,11 @@ export default function ShaolinGame() {
     }
 
     if (trapState.shaolin.dirty) {
-      setShaolinTrapDeck(trapState.shaolin.deck);
+      setShaolinUsedTrapTypes(trapState.shaolin.usedTypes);
       setShaolinTrappedTiles(trapState.shaolin.triggered);
     }
     if (trapState.ninja.dirty) {
-      setNinjaTrapDeck(trapState.ninja.deck);
+      setNinjaUsedTrapTypes(trapState.ninja.usedTypes);
       setNinjaTrappedTiles(trapState.ninja.triggered);
     }
 
@@ -3691,16 +4077,30 @@ export default function ShaolinGame() {
           />
         </div>
 
+        {gameStarted && (
+          <div style={{
+            flex: "0 0 auto", width: 240,
+            position: "sticky", top: 12,
+            alignSelf: "flex-start",
+            maxHeight: "calc(100vh - 24px)",
+            overflowY: "auto",
+          }}>
+            <BattleLogPanel
+              shaolinLog={shaolinBattleLog}
+              ninjaLog={ninjaBattleLog}
+            />
+          </div>
+        )}
+
         {gameStarted && (() => {
           // Compute per-player usability of pre-roll sorceries and roll eligibility.
           function preRollUsableFor(char) {
             const inv = char === "shaolin" ? shaolinInventory : ninjaInventory;
             const t = char === "shaolin" ? shaolinTile : ninjaTile;
-            const onNormal = t !== null && board.tiles[t]?.type === T.NORMAL;
             return inv.sorceries.some((s) => {
               const def = SORCERY_BY_ID[s.id];
               if (!def || def.trigger !== "pre_roll") return false;
-              if (s.id === "ancient_key" && !onNormal) return false;
+              if (s.id === "ancient_key" && t === null) return false;
               if (s.id === "magic_compass" && t === null) return false;
               return true;
             });
@@ -3728,7 +4128,6 @@ export default function ShaolinGame() {
               <PlayerPanel
                 character="shaolin"
                 label="🥋 Shaolin Master"
-                battleLog={shaolinBattleLog}
                 sorceries={shaolinInventory.sorceries}
                 extraPoses={shaolinInventory.extraPoses}
                 held={shaolinHeld}
@@ -3746,7 +4145,6 @@ export default function ShaolinGame() {
               <PlayerPanel
                 character="ninja"
                 label="🥷 Ninja"
-                battleLog={ninjaBattleLog}
                 sorceries={ninjaInventory.sorceries}
                 extraPoses={ninjaInventory.extraPoses}
                 held={ninjaHeld}
@@ -3907,6 +4305,12 @@ export default function ShaolinGame() {
         <TrapPoseTheftModal
           poses={modal.poses}
           onChoose={(id) => modal.resolve(id)}
+        />
+      )}
+      {modal?.type === "trap_tribute" && (
+        <TrapTributeModal
+          item={modal.item}
+          onClose={() => modal.resolve("ok")}
         />
       )}
     </div>
