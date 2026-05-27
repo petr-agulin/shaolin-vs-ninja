@@ -1,39 +1,50 @@
 import { useState, useMemo, useEffect } from "react";
 import bambooBackground from "./IMAGES/Bamboo.jpg";
 
-// Eagerly import every pose image. Base poses follow the pattern
-// "{Type}-{height}-{character}.png", e.g. "Strike-high-shaolin.png".
-const POSE_IMAGE_MODULES = import.meta.glob("./IMAGES/*-*-*.png", {
+// Eagerly import every pose image. Images live in per-character subfolders
+// under IMAGES/. File names follow these patterns:
+//   Player hero base:  "{Type}-{height}-{character}.png"  (character: shaolin | ninja)
+//   Player hero extra: "Extra-{Name1}-{name2}-strike-{height}-{character}.png"
+//   Computer enemy:    the same patterns, prefixed "Computer-", with a compound
+//                      character "{kind}-ninja" (black | shadow | fire | demon).
+// We strip the leading "Computer-" so a file like
+// "Computer-Strike-high-black-ninja.png" keys exactly to its lookup
+// "strike-high-black-ninja".
+const ALL_POSE_IMAGE_MODULES = import.meta.glob("./IMAGES/**/*.png", {
   eager: true,
   import: "default",
 });
 const POSE_IMAGES = {};
-for (const path in POSE_IMAGE_MODULES) {
-  const file = path.split("/").pop().replace(/\.png$/i, "");
-  POSE_IMAGES[file.toLowerCase()] = POSE_IMAGE_MODULES[path];
-}
-
-// Extra-pose images follow the pattern
-// "Extra-{NamePart1}-{namepart2}-strike-{height}-{character}.png".
-// We key these by pose id ("thunder_dragon", "ghost_walk", etc.) so a base
-// type/height lookup can't accidentally pick the wrong file.
-const EXTRA_POSE_IMAGE_MODULES = import.meta.glob("./IMAGES/Extra-*.png", {
-  eager: true,
-  import: "default",
-});
 const EXTRA_POSE_IMAGES = {};
-for (const path in EXTRA_POSE_IMAGE_MODULES) {
-  const file = path.split("/").pop().replace(/\.png$/i, "");
-  const parts = file.split("-"); // ["Extra", "Thunder", "dragon", "strike", "high", "shaolin"]
-  if (parts.length >= 3 && parts[0].toLowerCase() === "extra") {
-    const id = `${parts[1]}_${parts[2]}`.toLowerCase();
-    EXTRA_POSE_IMAGES[id] = EXTRA_POSE_IMAGE_MODULES[path];
+for (const path in ALL_POSE_IMAGE_MODULES) {
+  let file = path.split("/").pop().replace(/\.png$/i, "").toLowerCase();
+  if (file.startsWith("computer-")) file = file.slice("computer-".length);
+  const mod = ALL_POSE_IMAGE_MODULES[path];
+  const parts = file.split("-");
+  if (parts[0] === "extra") {
+    // "extra-thunder-dragon-strike-high-shaolin"    → id thunder_dragon, char shaolin
+    // "extra-demon-claw-strike-high-black-ninja"    → id demon_claw,     char black-ninja
+    const id = `${parts[1]}_${parts[2]}`;
+    const character = parts.slice(5).join("-");
+    EXTRA_POSE_IMAGES[`${id}-${character}`] = mod;
+    // The player hero version also gets a character-agnostic key, since the
+    // inventory thumbnails look extras up by id alone and only ever show the hero.
+    if (character === "shaolin" || character === "ninja") {
+      EXTRA_POSE_IMAGES[id] = mod;
+    }
+  } else {
+    // base pose: "strike-high-shaolin" / "strike-high-black-ninja"
+    POSE_IMAGES[file] = mod;
   }
 }
 
 function poseImageFor(character, pose) {
   if (!pose || !character) return null;
-  if (pose.id && EXTRA_POSE_IMAGES[pose.id]) return EXTRA_POSE_IMAGES[pose.id];
+  if (pose.id) {
+    const qualified = EXTRA_POSE_IMAGES[`${pose.id}-${character}`.toLowerCase()];
+    if (qualified) return qualified;
+    if (EXTRA_POSE_IMAGES[pose.id]) return EXTRA_POSE_IMAGES[pose.id];
+  }
   const key = `${pose.type}-${pose.height}-${character}`.toLowerCase();
   return POSE_IMAGES[key] || null;
 }
@@ -588,15 +599,17 @@ function TileRect({ tile }) {
   if (tile.type === T.HOLE) return null;
 
   if (tile.type === T.BOSS) {
+    const pinkFill = "#ff77a8";
+    const pinkEdge = "#b8336a";
     return (
       <g>
         <rect x={x - 2} y={y - 2} width={TILE + 4} height={TILE + 4} rx={10}
-              fill="none" stroke={PALETTE.bossEdge} strokeWidth={3} />
+              fill="none" stroke={pinkEdge} strokeWidth={3} />
         <rect x={x} y={y} width={TILE} height={TILE} rx={8}
-              fill={PALETTE.boss} stroke={PALETTE.bossEdge} strokeWidth={2} />
+              fill={pinkFill} stroke={pinkEdge} strokeWidth={2} />
         <NumBadge x={x + 5} y={y + 13} n={n} />
-        <CenteredLabel cx={cx} cy={cy - 4} text="BOSS" fill={PALETTE.text} size={13} />
-        <CenteredLabel cx={cx} cy={cy + 11} text="64" fill={PALETTE.text} size={11} weight={500} />
+        <CenteredLabel cx={cx} cy={cy - 4} text="FINAL" fill={PALETTE.text} size={11} />
+        <CenteredLabel cx={cx} cy={cy + 9} text="DUEL" fill={PALETTE.text} size={11} />
       </g>
     );
   }
@@ -2493,9 +2506,12 @@ function FinalDuelIntroModal({ onBegin }) {
 //   p1_choose → handoff_p2 → p2_choose → reveal (with optional dice subphase)
 //   → either round_result → next round (handoff_p1 → p1_choose...) or → battle_end
 
-function PoseCard({ pose, character, selected, onSelect, locked = false }) {
+function PoseCard({ pose, character, selected, onSelect, locked = false, flip = false }) {
   const img = poseImageFor(character, pose);
   const isExtra = EXTRA_POSE_ID_SET.has(pose.id);
+  const imgTransform = [flip ? "scaleX(-1)" : "", isExtra ? "scale(1.2)" : ""]
+    .filter(Boolean)
+    .join(" ");
   const typeColors = {
     Strike: { text: "#2a1000", bg: "#E2852E" },
     Block:  { text: "#3d2f08", bg: "#FFD45A" },
@@ -2572,7 +2588,7 @@ function PoseCard({ pose, character, selected, onSelect, locked = false }) {
               maxHeight: "100%",
               objectFit: "contain",
               display: "block",
-              ...(isExtra ? { transform: "scale(1.2)" } : {}),
+              ...(imgTransform ? { transform: imgTransform } : {}),
             }}
           />
         ) : (
@@ -2646,8 +2662,10 @@ function BattleScreen({
   }
   const isSolo = mode === "solo";
   const p1Character = activeCharacter;
-  // In solo mode the opponent is always the on-tile ninja.
-  const p2Character = isSolo ? "ninja" : otherCharacter;
+  // In solo mode the opponent is the on-tile computer ninja. Its images live in
+  // a per-kind folder keyed "{kind}-ninja" (black-ninja, shadow-ninja, …), which
+  // also keeps it distinct from the player hero ninja ("ninja").
+  const p2Character = isSolo ? `${ninjaType}-ninja` : otherCharacter;
   const p1Poses = (p1Character === "shaolin" ? BASE_POSES_SHAOLIN : BASE_POSES_NINJA).concat(p1Extras);
   // CPU enemies in solo mode use only the base pose set for now.
   const p2Poses = isSolo
@@ -3228,6 +3246,9 @@ function BattleScreen({
           const rightChar   = swap ? p1Character : p2Character;
           const leftColor   = swap ? "#ff5252" : "#22c55e";
           const rightColor  = swap ? "#22c55e" : "#ff5252";
+          // Ninja Warrior art faces right by default. In the final duel it sits on
+          // the right (Shaolin is pinned left), so mirror it to face the opponent.
+          const rightFlip = isFinal && rightChar === "ninja";
           const sideStyle = {
             width: 200,
             display: "flex",
@@ -3250,7 +3271,7 @@ function BattleScreen({
               <div style={{ fontSize: 20, color: "#7a5500", fontWeight: 700, alignSelf: "center" }}>vs</div>
               <div style={sideStyle}>
                 <div style={{ fontSize: 13, color: rightColor, fontWeight: 700, marginBottom: 6 }}>{rightLabel}</div>
-                <PoseCard pose={rightChoice} character={rightChar} selected={false} onSelect={() => {}} />
+                <PoseCard pose={rightChoice} character={rightChar} selected={false} onSelect={() => {}} flip={rightFlip} />
               </div>
             </div>
           );
@@ -3674,13 +3695,6 @@ export default function ShaolinGame() {
     async function resolveLanding(tile, opts = {}) {
       const t = tiles[tile];
 
-      // Magic Compass: holes and ladders are bypassed entirely — the chip
-      // stays put and any non-hole/ladder event on the same tile still fires
-      // (item, fight, trap).
-      if (opts.skipHoleAndLadder && (t.type === T.HOLE || t.type === T.LADDER)) {
-        return tile;
-      }
-
       if (t.type === T.HOLE) {
         await sleep(400);
         // Safety Rope: offered before the fall executes. The for-loop sets
@@ -4005,9 +4019,11 @@ export default function ShaolinGame() {
 
     // Direct movement via sorcery (Magic Compass / Ancient Key) — bypass dice.
     if (isDirect) {
-      // Magic Compass animates step-by-step along the path; holes and ladders
-      // along the way (including at the destination) are ignored. Ancient Key
-      // teleports along its vertical jump (no step animation).
+      // Magic Compass animates step-by-step along the path; intermediate
+      // tiles are walked over visually without firing any landing logic, and
+      // the destination tile opens normally (item, fight, trap, hole, or
+      // ladder — all with their standard prompts). Ancient Key teleports
+      // along its vertical jump (no step animation).
       const stepwise = !!opts.stepwise;
       if (stepwise && current !== null && current !== directTarget) {
         const dir = directTarget > current ? 1 : -1;
@@ -4045,7 +4061,7 @@ export default function ShaolinGame() {
         }
         current = directTarget;
         await sleep(200);
-        current = await resolveLanding(directTarget, { skipHoleAndLadder: true });
+        current = await resolveLanding(directTarget);
 
         if (trapState.shaolin.dirty) {
           setShaolinUsedTrapTypes(trapState.shaolin.usedTypes);
