@@ -16,10 +16,22 @@ const ALL_POSE_IMAGE_MODULES = import.meta.glob("./IMAGES/**/*.png", {
 });
 const POSE_IMAGES = {};
 const EXTRA_POSE_IMAGES = {};
+// Illustration images for the item-found, ladder, and trap modals live under
+// IMAGES/Modals/{Items,Ladder,Traps}/. Each file is keyed by its sorcery or
+// trap id (lowercase, e.g. "magic_compass", "hold"), so a modal can look it
+// up directly without any naming gymnastics.
+const MODAL_IMAGES = { items: {}, traps: {}, ladder: null };
 for (const path in ALL_POSE_IMAGE_MODULES) {
+  const mod = ALL_POSE_IMAGE_MODULES[path];
+  if (path.includes("/Modals/")) {
+    const id = path.split("/").pop().replace(/\.png$/i, "").toLowerCase();
+    if (path.includes("/Modals/Items/")) MODAL_IMAGES.items[id] = mod;
+    else if (path.includes("/Modals/Traps/")) MODAL_IMAGES.traps[id] = mod;
+    else if (path.includes("/Modals/Ladder/")) MODAL_IMAGES.ladder = mod;
+    continue;
+  }
   let file = path.split("/").pop().replace(/\.png$/i, "").toLowerCase();
   if (file.startsWith("computer-")) file = file.slice("computer-".length);
-  const mod = ALL_POSE_IMAGE_MODULES[path];
   const parts = file.split("-");
   if (parts[0] === "extra") {
     // "extra-thunder-dragon-strike-high-shaolin"    → id thunder_dragon, char shaolin
@@ -1179,7 +1191,15 @@ const SORCERIES = [
     trigger: "battle_passive",
     category: "item",
     persistent: true,
-    description: "A persistent magical sword. While held, every dice tiebreaker in a battle round rolls two dice for you and keeps the higher result. Never spent on use — only lost via Sorcery Theft or Rival's Tribute traps.",
+    description: "A persistent magical sword. While held, every dice tiebreaker in a battle round rolls two dice for you and keeps the higher result. Never spent on use — only lost via Sorcery Theft or Rival's Tribute traps. Only the Ninja Warrior can discover it.",
+  },
+  {
+    id: "nunchaku",
+    name: "Nunchaku",
+    trigger: "battle_passive",
+    category: "item",
+    persistent: true,
+    description: "Persistent magical nunchaku. While held, every dice tiebreaker in a battle round rolls two dice for you and keeps the higher result. Never spent on use — only lost via Sorcery Theft or Rival's Tribute traps. Only the Shaolin Master can discover it.",
   },
   // ----- SORCERIES (panel section 2) ----------------------------------
   {
@@ -1206,6 +1226,14 @@ const SORCERIES = [
 ];
 
 const SORCERY_BY_ID = Object.fromEntries(SORCERIES.map((s) => [s.id, s]));
+
+// Persistent weapons (Sword / Nunchaku) share one identical battle effect:
+// while held, dice tiebreakers roll two dice and keep the higher. Each is
+// globally unique and may only be DISCOVERED by one character — Sword by the
+// Ninja Warrior, Nunchaku by the Shaolin Master — though a trap can still
+// transfer one across to the other player.
+const WEAPON_ITEM_IDS = ["sword", "nunchaku"];
+const WEAPON_DISCOVERY_CHAR = { sword: "ninja", nunchaku: "shaolin" };
 
 const NINJA_DESCRIPTIONS = {
   black:  "Disciplined assassin of the Shadow Clan. Defeat sends you back 2 tiles.",
@@ -1368,17 +1396,7 @@ function LadderModal({ tileNum, dest, onUse, onStay }) {
         <p style={{ fontStyle: "italic", fontSize: 14, lineHeight: 1.6, marginBottom: 16, color: "#6b4f1a" }}>
           "Each rung climbed is a battle won — rise swiftly, warrior, for the summit awaits."
         </p>
-        <div style={{
-          width: "100%", height: 160,
-          background: "#dde4cc",
-          borderRadius: 8,
-          marginBottom: 20,
-          display: "flex", alignItems: "center", justifyContent: "center",
-          color: "#8a9a7a", fontSize: 13,
-          border: "1px solid #bbc9a8",
-        }}>
-          [Ladder illustration — placeholder]
-        </div>
+        <FramedIllustration src={MODAL_IMAGES.ladder} alt="Ladder" />
         <p style={{ fontSize: 13, marginBottom: 22, color: "#7a5500" }}>
           This ladder leads to tile <strong>{dest}</strong>.
           Do you descend, or hold your ground?
@@ -1474,6 +1492,45 @@ const BTN_SECONDARY = {
   fontSize: 14, fontWeight: 600, cursor: "pointer",
 };
 
+// Shared "scroll" frame used by the item-found, ladder, and trap modals so
+// every reveal-style modal shows its illustration in a consistent gold-on-
+// maroon panel with corner brackets and an inner parchment background.
+function FramedIllustration({ src, alt, height = 240 }) {
+  if (!src) return null;
+  return (
+    <div style={{
+      width: "100%", height,
+      background: "linear-gradient(135deg, #8b1a1a 0%, #4a0a0a 100%)",
+      borderRadius: 10,
+      marginBottom: 14,
+      border: "3px solid #d4af37",
+      boxShadow: "0 0 24px rgba(212,175,55,0.45)",
+      position: "relative",
+      overflow: "hidden",
+    }}>
+      <span style={{ position: "absolute", top: 4,  left: 6,  color: "#d4af37", fontSize: 22, lineHeight: 1, fontFamily: "monospace" }}>┏</span>
+      <span style={{ position: "absolute", top: 4,  right: 6, color: "#d4af37", fontSize: 22, lineHeight: 1, fontFamily: "monospace" }}>┓</span>
+      <span style={{ position: "absolute", bottom: 4, left: 6,  color: "#d4af37", fontSize: 22, lineHeight: 1, fontFamily: "monospace" }}>┗</span>
+      <span style={{ position: "absolute", bottom: 4, right: 6, color: "#d4af37", fontSize: 22, lineHeight: 1, fontFamily: "monospace" }}>┛</span>
+      <div style={{
+        position: "absolute",
+        top: 16, left: 16, right: 16, bottom: 16,
+        background: "linear-gradient(180deg, #f5e6c8 0%, #e8d4a8 100%)",
+        borderRadius: 6,
+        border: "1px solid #d4af37",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        overflow: "hidden",
+      }}>
+        <img
+          src={src}
+          alt={alt}
+          style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain", display: "block" }}
+        />
+      </div>
+    </div>
+  );
+}
+
 function FightIntroModal({ ninjaType, onFight }) {
   const info = NINJA[ninjaType];
   return (
@@ -1508,6 +1565,7 @@ const SORCERY_ICONS = {
   safety_rope:    "🪢",
   magic_powder:   "✨",
   sword:          "🗡️",
+  nunchaku:       "🔗",
   sixth_sense:    "👁",
   oracle_eye:     "🔮",
   iron_bell:      "🔔",
@@ -1920,6 +1978,7 @@ function TrapAnnounceModal({ trapType, message, onClose, buttonLabel = "Continue
         <p style={{ fontSize: 13, fontStyle: "italic", lineHeight: 1.55, marginBottom: 14, color: "#6b4f1a" }}>
           {info.flavor}
         </p>
+        <FramedIllustration src={MODAL_IMAGES.traps[trapType]} alt={info.title || "Trap"} />
         <p style={{ fontSize: 14, fontWeight: 600, lineHeight: 1.55, marginBottom: 22, color: "#5a4317" }}>
           {message}
         </p>
@@ -1947,6 +2006,7 @@ function TrapSorceryTheftModal({ sorceries, onChoose }) {
         <p style={{ fontSize: 13, fontStyle: "italic", lineHeight: 1.55, marginBottom: 14, color: "#6b4f1a" }}>
           {info.flavor}
         </p>
+        <FramedIllustration src={MODAL_IMAGES.traps.sorcery_theft} alt={info.title} />
         <p style={{ fontSize: 13, fontWeight: 600, marginBottom: 12, color: "#5a4317" }}>
           Choose an item or sorcery to surrender:
         </p>
@@ -2009,6 +2069,7 @@ function TrapPoseTheftModal({ poses, onChoose }) {
         <p style={{ fontSize: 13, fontStyle: "italic", lineHeight: 1.55, marginBottom: 14, color: "#6b4f1a" }}>
           {info.flavor}
         </p>
+        <FramedIllustration src={MODAL_IMAGES.traps.pose_theft} alt={info.title} />
         <p style={{ fontSize: 13, fontWeight: 600, marginBottom: 12, color: "#5a4317" }}>
           Choose an extra pose to surrender:
         </p>
@@ -2079,6 +2140,7 @@ function TrapTributeModal({ item, onClose }) {
         <p style={{ fontSize: 13, fontStyle: "italic", lineHeight: 1.55, marginBottom: 14, color: "#6b4f1a" }}>
           {info.flavor}
         </p>
+        <FramedIllustration src={MODAL_IMAGES.traps.rivals_tribute} alt={info.title} />
         <p style={{ fontSize: 14, fontWeight: 600, lineHeight: 1.55, marginBottom: 14, color: "#5a4317" }}>
           The trap springs against you.
         </p>
@@ -2381,7 +2443,9 @@ function ItemModal({ variant, item, onClose }) {
   const def = isSorcery ? SORCERY_BY_ID[item.id] : null;
   const isItem = def && def.category === "item";
   const isPersistent = !!def?.persistent;
-  const extraImg = !isSorcery ? EXTRA_POSE_IMAGES[item.id] : null;
+  const illustration = isSorcery
+    ? MODAL_IMAGES.items[item.id]
+    : EXTRA_POSE_IMAGES[item.id];
   let header;
   if (!isSorcery) header = "✦ RARE TECHNIQUE SCROLL ✦";
   else if (isItem) header = isPersistent ? "PERSISTENT ITEM FOUND" : "ITEM FOUND";
@@ -2390,10 +2454,8 @@ function ItemModal({ variant, item, onClose }) {
     <div style={MODAL_OVERLAY}>
       <Draggable style={{
         ...MODAL_BOX, maxWidth: 460, width: "92%",
-        ...(!isSorcery ? {
-          border: "2px solid #d4af37",
-          boxShadow: "0 8px 40px rgba(0,0,0,0.6), 0 0 32px rgba(212,175,55,0.45)",
-        } : {}),
+        border: "2px solid #d4af37",
+        boxShadow: "0 8px 40px rgba(0,0,0,0.6), 0 0 32px rgba(212,175,55,0.45)",
       }}>
         <div style={{
           fontSize: 13,
@@ -2406,57 +2468,7 @@ function ItemModal({ variant, item, onClose }) {
           {SORCERY_ICONS[item.id] && isSorcery ? `${SORCERY_ICONS[item.id]} ` : ""}{item.name}
           {isPersistent && <span style={{ fontSize: 14, color: "#7a5500", marginLeft: 6 }}>🔒</span>}
         </h2>
-        {!isSorcery && extraImg ? (
-          <div style={{
-            width: "100%", height: 260,
-            background: "linear-gradient(135deg, #8b1a1a 0%, #4a0a0a 100%)",
-            borderRadius: 10,
-            marginBottom: 14,
-            border: "3px solid #d4af37",
-            boxShadow: "0 0 24px rgba(212,175,55,0.45)",
-            position: "relative",
-            overflow: "hidden",
-          }}>
-            {/* Asian-style corner brackets in gold */}
-            <span style={{ position: "absolute", top: 4,  left: 6,  color: "#d4af37", fontSize: 22, lineHeight: 1, fontFamily: "monospace" }}>┏</span>
-            <span style={{ position: "absolute", top: 4,  right: 6, color: "#d4af37", fontSize: 22, lineHeight: 1, fontFamily: "monospace" }}>┓</span>
-            <span style={{ position: "absolute", bottom: 4, left: 6,  color: "#d4af37", fontSize: 22, lineHeight: 1, fontFamily: "monospace" }}>┗</span>
-            <span style={{ position: "absolute", bottom: 4, right: 6, color: "#d4af37", fontSize: 22, lineHeight: 1, fontFamily: "monospace" }}>┛</span>
-            {/* Inner parchment panel that holds the figure */}
-            <div style={{
-              position: "absolute",
-              top: 16, left: 16, right: 16, bottom: 16,
-              background: "linear-gradient(180deg, #f5e6c8 0%, #e8d4a8 100%)",
-              borderRadius: 6,
-              border: "1px solid #d4af37",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              overflow: "hidden",
-            }}>
-              <img
-                src={extraImg}
-                alt={item.name}
-                style={{
-                  maxWidth: "100%", maxHeight: "100%",
-                  objectFit: "contain", display: "block",
-                }}
-              />
-            </div>
-          </div>
-        ) : (
-          <div style={{
-            width: "100%", height: 160,
-            background: "#dde4cc",
-            borderRadius: 8,
-            marginBottom: 14,
-            display: "flex", alignItems: "center", justifyContent: "center",
-            color: "#8a9a7a", fontSize: 13,
-            border: "1px solid #bbc9a8",
-          }}>
-            [{isSorcery ? (isItem ? "Item" : "Sorcery") : "Pose scroll"} illustration — placeholder]
-          </div>
-        )}
+        <FramedIllustration src={illustration} alt={item.name} />
         {!isSorcery && (
           <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10, color: "#5a4317" }}>
             {item.type} / {item.height}
@@ -2800,18 +2812,23 @@ function BattleScreen({
     setDeviceHolder("p2");
     setPhase("reveal");
   }
+  function heldWeapon(player) {
+    // The Sword and Nunchaku grant one identical bonus; a player can hold at
+    // most one in normal play (one via theft), so picking either is sufficient.
+    return WEAPON_ITEM_IDS.find((id) => playerHas(player, id)) || null;
+  }
   function rollOnce() {
-    // One synchronous dice roll with the Sword bonus applied per side, plus
+    // One synchronous dice roll with the weapon bonus applied per side, plus
     // the Combat Rating modifier (final duel only — p1Mod/p2Mod are 0 elsewhere).
-    // If a player holds the Sword, roll two d6 and keep the higher result;
-    // the Combat Rating modifier is then added to that higher result.
-    // Returns { p1, p2, p1Final, p2Final, p1Extra, p2Extra, p1Sword, p2Sword,
+    // If a player holds a weapon (Sword/Nunchaku), roll two d6 and keep the
+    // higher result; the Combat Rating modifier is then added to that result.
+    // Returns { p1, p2, p1Final, p2Final, p1Extra, p2Extra, p1Weapon, p2Weapon,
     //          p1Mod, p2Mod } where p1/p2 are the natural (pre-modifier) dice
     // values shown to the player and p1Final/p2Final decide the round.
-    const p1Sword = playerHas("p1", "sword");
-    const p2Sword = playerHas("p2", "sword");
+    const p1Weapon = heldWeapon("p1");
+    const p2Weapon = heldWeapon("p2");
     let p1, p2, p1Extra = null, p2Extra = null;
-    if (p1Sword) {
+    if (p1Weapon) {
       const a1 = Math.floor(Math.random() * 6) + 1;
       const a2 = Math.floor(Math.random() * 6) + 1;
       p1 = Math.max(a1, a2);
@@ -2819,7 +2836,7 @@ function BattleScreen({
     } else {
       p1 = Math.floor(Math.random() * 6) + 1;
     }
-    if (p2Sword) {
+    if (p2Weapon) {
       const b1 = Math.floor(Math.random() * 6) + 1;
       const b2 = Math.floor(Math.random() * 6) + 1;
       p2 = Math.max(b1, b2);
@@ -2832,7 +2849,7 @@ function BattleScreen({
       p1Final: p1 + p1Mod,
       p2Final: p2 + p2Mod,
       p1Extra, p2Extra,
-      p1Sword, p2Sword,
+      p1Weapon, p2Weapon,
       p1Mod, p2Mod,
     };
   }
@@ -3106,7 +3123,10 @@ function BattleScreen({
         </div>
         {(() => {
           const basePoses = poses.filter((p) => !EXTRA_POSE_ID_SET.has(p.id));
-          const extraPoses = poses.filter((p) => EXTRA_POSE_ID_SET.has(p.id));
+          const heightOrder = { High: 0, Mid: 1, Low: 2 };
+          const extraPoses = poses
+            .filter((p) => EXTRA_POSE_ID_SET.has(p.id))
+            .sort((a, b) => heightOrder[a.height] - heightOrder[b.height]);
           return (
             <>
               <div style={{
@@ -3286,9 +3306,9 @@ function BattleScreen({
             <div style={{ marginTop: 6 }}>
               <div>
                 Dice: <strong>{p1Label}</strong> rolled <strong>{dice.p1}</strong>
-                {dice.p1Sword && dice.p1Extra && (
+                {dice.p1Weapon && dice.p1Extra && (
                   <span style={{ color: "#7a5500", fontStyle: "italic" }}>
-                    {" "}🗡️ Sword bonus: <strong>{dice.p1Extra.a}</strong> & <strong>{dice.p1Extra.b}</strong> — higher taken
+                    {" "}{SORCERY_ICONS[dice.p1Weapon]} {SORCERY_BY_ID[dice.p1Weapon].name} bonus: <strong>{dice.p1Extra.a}</strong> & <strong>{dice.p1Extra.b}</strong> — higher taken
                   </span>
                 )}
                 {dice.p1Mod !== 0 && (
@@ -3298,9 +3318,9 @@ function BattleScreen({
                 )}
                 ,{" "}
                 <strong>{p2Label}</strong> rolled <strong>{dice.p2}</strong>
-                {dice.p2Sword && dice.p2Extra && (
+                {dice.p2Weapon && dice.p2Extra && (
                   <span style={{ color: "#7a5500", fontStyle: "italic" }}>
-                    {" "}🗡️ Sword bonus: <strong>{dice.p2Extra.a}</strong> & <strong>{dice.p2Extra.b}</strong> — higher taken
+                    {" "}{SORCERY_ICONS[dice.p2Weapon]} {SORCERY_BY_ID[dice.p2Weapon].name} bonus: <strong>{dice.p2Extra.a}</strong> & <strong>{dice.p2Extra.b}</strong> — higher taken
                   </span>
                 )}
                 {dice.p2Mod !== 0 && (
@@ -3639,27 +3659,27 @@ export default function ShaolinGame() {
       const setInv = char === "shaolin" ? setShaolinInventory : setNinjaInventory;
       setInv((prev) => ({ ...prev, sorceries: prev.sorceries.filter((s) => s.id !== id) }));
     }
+    function rivalHoldsWeapon(rival, id) {
+      return WEAPON_ITEM_IDS.includes(id) && invMirror[rival].sorceries.some((s) => s.id === id);
+    }
     function hasItemsToSteal(char) {
       // True if the landing player has at least one transferable thing.
-      // Sword is globally unique — exclude it from the count when the rival
-      // already holds it, so we don't fire Rival's Tribute when nothing can
-      // actually move between inventories.
+      // Weapons (Sword/Nunchaku) are globally unique — exclude one from the
+      // count when the rival already holds it, so we don't fire Rival's Tribute
+      // when nothing can actually move between inventories.
       if (invMirror[char].extraPoses.length > 0) return true;
       const rival = char === "shaolin" ? "ninja" : "shaolin";
-      const rivalHasSword = invMirror[rival].sorceries.some((s) => s.id === "sword");
-      return invMirror[char].sorceries.some((s) => !(s.id === "sword" && rivalHasSword));
+      return invMirror[char].sorceries.some((s) => !rivalHoldsWeapon(rival, s.id));
     }
     function pickRandomTributeItem(char) {
       const sorcs = invMirror[char].sorceries.map((s) => ({ kind: "sorcery", ...s }));
       const extras = invMirror[char].extraPoses.map((p) => ({ kind: "extra_pose", ...p }));
-      let pool = [...sorcs, ...extras];
-      // Sword is globally unique — if the rival already holds it, exclude
-      // Sword from the candidate pool so we pick a different item.
+      // Weapons are globally unique — if the rival already holds one, exclude
+      // it from the candidate pool so we pick a different item to transfer.
       const rival = char === "shaolin" ? "ninja" : "shaolin";
-      const rivalHasSword = invMirror[rival].sorceries.some((s) => s.id === "sword");
-      if (rivalHasSword) {
-        pool = pool.filter((it) => !(it.kind === "sorcery" && it.id === "sword"));
-      }
+      const pool = [...sorcs, ...extras].filter(
+        (it) => !(it.kind === "sorcery" && rivalHoldsWeapon(rival, it.id))
+      );
       if (pool.length === 0) return null;
       return pool[Math.floor(Math.random() * pool.length)];
     }
@@ -3917,13 +3937,14 @@ export default function ShaolinGame() {
         }
         const inv = character === "shaolin" ? shaolinInventory : ninjaInventory;
         const heldSorceryIds = new Set(inv.sorceries.map((s) => s.id));
-        // Sword is globally unique — exclude it from this player's pool if
-        // the OTHER player currently holds it.
         const otherChar = character === "shaolin" ? "ninja" : "shaolin";
-        const otherHoldsSword = invMirror[otherChar].sorceries.some((s) => s.id === "sword");
         const availableSorceries = SORCERIES.filter((s) => {
           if (heldSorceryIds.has(s.id)) return false;
-          if (s.id === "sword" && otherHoldsSword) return false;
+          // Weapons (Sword/Nunchaku) can only be discovered by one character.
+          if (WEAPON_DISCOVERY_CHAR[s.id] && WEAPON_DISCOVERY_CHAR[s.id] !== character) return false;
+          // Each weapon is globally unique — if the OTHER player already holds
+          // it (e.g. acquired via theft/tribute), it can't be discovered again.
+          if (WEAPON_ITEM_IDS.includes(s.id) && invMirror[otherChar].sorceries.some((x) => x.id === s.id)) return false;
           return true;
         }).map((s) => ({ kind: "sorcery", ...s }));
         const extras = character === "shaolin" ? EXTRA_POSES_SHAOLIN : EXTRA_POSES_NINJA;
