@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect } from "react";
 import bambooBackground from "./IMAGES/Bamboo.jpg";
+import { getFinalStory } from "./FinalStories.js";
 
 // Eagerly import every pose image. Images live in per-character subfolders
 // under IMAGES/. File names follow these patterns:
@@ -2804,7 +2805,9 @@ function BattleScreen({
     const p1Eye = p1Sorceries.some((s) => s.id === "oracle_eye");
     const p2Eye = p2Sorceries.some((s) => s.id === "oracle_eye");
     if (p1Eye && p2Eye) return "oracle_cancel";
-    if (p1Eye && !p2Eye) return "handoff_p2"; // p2 chooses first
+    // Oracle's Eye reorder: p2 chooses first. No "Pass the device" modal
+    // before round 1 — players hand off the device themselves.
+    if (p1Eye && !p2Eye) return "p2_choose";
     return "p1_choose";
   });
   const [round, setRound] = useState(1);
@@ -2917,17 +2920,6 @@ function BattleScreen({
   }
   function readyFor(player) {
     setDeviceHolder(player);
-    // Final duel: when the Eye holder receives the device to choose SECOND,
-    // automatically spend the sorcery and reveal the opponent's pose.
-    if (isFinal && !isSolo) {
-      if (player === "p1" && firstChooser === "p2" && playerHas("p1", "oracle_eye")) {
-        setRevealedByP1(true);
-        onSpendSorcery("p1", "oracle_eye");
-      } else if (player === "p2" && firstChooser === "p1" && playerHas("p2", "oracle_eye")) {
-        setRevealedByP2(true);
-        onSpendSorcery("p2", "oracle_eye");
-      }
-    }
     setPhase(player === "p1" ? "p1_choose" : "p2_choose");
   }
   function confirmP2() {
@@ -3088,7 +3080,23 @@ function BattleScreen({
       setRevealedByP2(false);
       setMagicPowderPending(null);
       setIronBellDeclined(false);
-      beginRoundAfterReset();
+      // No "Pass the device" modal between rounds — players physically hand
+      // the device back to the default first chooser themselves. Shaolin
+      // (p1) always picks first, except when only one player still holds
+      // Oracle's Eye (the Eye holder must pick SECOND). Within the new
+      // round, the standard handoff still appears between the two picks.
+      if (isSolo) {
+        setPhase("p1_choose");
+      } else {
+        let nextFC = "p1";
+        if (isFinal) {
+          const p1Eye = playerHas("p1", "oracle_eye");
+          const p2Eye = playerHas("p2", "oracle_eye");
+          if (p1Eye && !p2Eye) nextFC = "p2";
+        }
+        setFirstChooser(nextFC);
+        setPhase(nextFC === "p1" ? "p1_choose" : "p2_choose");
+      }
     }
   }
   function finishBattle() {
@@ -3096,9 +3104,7 @@ function BattleScreen({
     if (isSolo) {
       onResolved(battleWinner === "p1" ? "won" : "lost");
     } else {
-      // "p1" | "p2" — caller interprets. Scores are forwarded so the parent's
-      // post-duel "The Duel is Over" summary modal can render the final pips.
-      onResolved(battleWinner, { scores });
+      onResolved(battleWinner);
     }
   }
 
@@ -3330,9 +3336,11 @@ function BattleScreen({
           onClick={player === "p1" ? confirmP1 : confirmP2}
           disabled={!selecting}
         >
-          {player === "p1"
-            ? (isSolo ? "Confirm pose" : "I have chosen — pass to other player")
-            : "Reveal"}
+          {isSolo
+            ? "Confirm pose"
+            : (player === firstChooser
+                ? "I have chosen — pass to other player"
+                : "Reveal")}
         </button>
       </Draggable>
     );
@@ -3361,6 +3369,12 @@ function BattleScreen({
   function revealScreen() {
     const winnerSide = finalWinner;
     const needsDice = outcome.winner === "dice" && !dice;
+    // Show the score as it WILL be once this round's winner is committed, so
+    // the pip matching the just-announced winner already appears filled. While
+    // dice are pending (finalWinner not yet known) the pre-round score stays.
+    const displayedScores = finalWinner
+      ? { ...scores, [finalWinner]: scores[finalWinner] + 1 }
+      : scores;
     return (
       <Draggable style={{
         ...MODAL_BOX,
@@ -3382,7 +3396,7 @@ function BattleScreen({
             Round {round}
           </div>
           <ScorePips
-            scores={scores}
+            scores={displayedScores}
             p1Label={p1Label}
             p2Label={p2Label}
             nameColor="#1a1208"
@@ -3560,7 +3574,16 @@ function BattleScreen({
           <h1 style={{ margin: "0 0 10px 0", fontSize: 22, color: "#d4af37", letterSpacing: 1 }}>
             {winnerName} wins the ultimate duel.
           </h1>
-          <p style={{ fontSize: 14, color: "#c4ad7b", marginBottom: 20 }}>{flavor}</p>
+          <p style={{ fontSize: 14, color: "#c4ad7b", margin: "0 0 14px 0" }}>{flavor}</p>
+          <ScorePips
+            scores={scores}
+            p1Label={p1Label}
+            p2Label={p2Label}
+            winsToWin={winsToWin}
+            onDark={true}
+            nameColor="#f5e8c4"
+            vsColor="#d4af37"
+          />
           {winnerImg && (
             <div style={{
               width: "100%",
@@ -3646,9 +3669,6 @@ export default function ShaolinGame() {
   const [modal, setModal] = useState(null); // null | { type, resolve, ...data }
   const [lastRoll, setLastRoll] = useState(null); // null | { value, character }
   const [gameWinner, setGameWinner] = useState(null); // null | "shaolin" | "ninja"
-  // Final scores from the duel (e.g. { p1: 3, p2: 1 }, with p1 = Shaolin) —
-  // captured at finishBattle so the game-over summary modal can render them.
-  const [finalDuelScores, setFinalDuelScores] = useState(null);
   const [shaolinInventory, setShaolinInventory] = useState({ sorceries: [], extraPoses: [] });
   const [ninjaInventory, setNinjaInventory] = useState({ sorceries: [], extraPoses: [] });
   const [shaolinDepleted, setShaolinDepleted] = useState(() => new Set());
@@ -3731,7 +3751,6 @@ export default function ShaolinGame() {
     setCurrentTurn("any");
     setLastRoll(null);
     setGameWinner(null);
-    setFinalDuelScores(null);
     resetPlayerProgress();
   }
 
@@ -3743,7 +3762,6 @@ export default function ShaolinGame() {
     setCurrentTurn(null);
     setLastRoll(null);
     setGameWinner(null);
-    setFinalDuelScores(null);
     resetPlayerProgress();
   }
 
@@ -4624,31 +4642,58 @@ export default function ShaolinGame() {
         }}>
           <Draggable style={{
             ...MODAL_BOX,
-            maxWidth: 460, width: "92%",
+            maxWidth: 640, width: "94%",
+            maxHeight: "90vh",
+            display: "flex", flexDirection: "column",
             background: "#120d04",
             border: "2px solid #d4af37",
             color: "#f5e8c4",
           }}>
-            <div style={{ fontSize: 44, marginBottom: 8 }}>⚔️</div>
+            <div
+              aria-label="Victory"
+              title="勝 — Victory"
+              style={{
+                fontSize: 56,
+                lineHeight: 1,
+                marginBottom: 10,
+                color: "#d4af37",
+                textShadow: "0 0 20px rgba(212,175,55,0.55), 0 2px 4px rgba(0,0,0,0.6)",
+                fontFamily: '"Songti SC", "STKaiti", "DFKai-SB", "Noto Serif CJK SC", "SimSun", Georgia, serif',
+                fontWeight: 700,
+                letterSpacing: "0.15em",
+              }}
+            >
+              勝
+            </div>
             <h1 style={{ margin: "0 0 10px 0", fontSize: 22, color: "#d4af37", letterSpacing: 1 }}>
-              The Duel is Over
+              A Legend Is Born
             </h1>
-            {finalDuelScores && (
-              <ScorePips
-                scores={finalDuelScores}
-                p1Label="🥋 Shaolin Master"
-                p2Label="🥷 Ninja Warrior"
-                winsToWin={3}
-                onDark={true}
-                nameColor="#f5e8c4"
-                vsColor="#d4af37"
-              />
-            )}
-            <p style={{ fontSize: 15, fontWeight: 700, marginBottom: 24, color: "#f5e8c4" }}>
-              {gameWinner === "shaolin" ? "Shaolin Master" : "Ninja Warrior"} wins the ultimate duel.
+            <p style={{ fontSize: 15, fontStyle: "italic", margin: "0 0 18px 0", color: "#c4ad7b" }}>
+              The battle has ended, but the story lives on.
             </p>
+            <div style={{
+              flex: "1 1 auto",
+              minHeight: 0,
+              overflowY: "auto",
+              textAlign: "left",
+              padding: "16px 18px",
+              marginBottom: 22,
+              background: "rgba(245,232,196,0.05)",
+              border: "1px solid rgba(212,175,55,0.45)",
+              borderRadius: 8,
+              color: "#e8dcb0",
+              fontFamily: 'Georgia, "Times New Roman", serif',
+              fontSize: 14.5,
+              lineHeight: 1.65,
+            }}>
+              {getFinalStory(gameWinner).split(/\n\s*\n/).map((para, i) => (
+                <p key={i} style={{ margin: i === 0 ? "0 0 12px 0" : "0 0 12px 0" }}>
+                  {para.trim()}
+                </p>
+              ))}
+            </div>
             <button
-              style={{ ...BTN_PRIMARY, background: "#d4af37", color: "#120d04", fontSize: 15, padding: "12px 28px" }}
+              style={{ ...BTN_PRIMARY, background: "#d4af37", color: "#120d04", fontSize: 15, padding: "12px 28px", flex: "0 0 auto" }}
               onClick={regenerate}
             >
               ↺ Start New Game
@@ -4716,10 +4761,7 @@ export default function ShaolinGame() {
                   : computeCombatRating(ninjaBattleLog))
               : 0
           }
-          onResolved={(result, info) => {
-            if (info?.scores) setFinalDuelScores(info.scores);
-            modal.resolve(result);
-          }}
+          onResolved={(result) => modal.resolve(result)}
         />
       )}
       {modal?.type === "item" && (
