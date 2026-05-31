@@ -20,7 +20,13 @@ const EXTRA_POSE_IMAGES = {};
 // IMAGES/Modals/{Items,Ladder,Traps}/. Each file is keyed by its sorcery or
 // trap id (lowercase, e.g. "magic_compass", "hold"), so a modal can look it
 // up directly without any naming gymnastics.
-const MODAL_IMAGES = { items: {}, traps: {}, ladder: null };
+const MODAL_IMAGES = {
+  items: {},
+  traps: {},
+  ladder: null,
+  finalDuel: null,
+  finalDuelWin: { shaolin: null, ninja: null },
+};
 for (const path in ALL_POSE_IMAGE_MODULES) {
   const mod = ALL_POSE_IMAGE_MODULES[path];
   if (path.includes("/Modals/")) {
@@ -28,6 +34,11 @@ for (const path in ALL_POSE_IMAGE_MODULES) {
     if (path.includes("/Modals/Items/")) MODAL_IMAGES.items[id] = mod;
     else if (path.includes("/Modals/Traps/")) MODAL_IMAGES.traps[id] = mod;
     else if (path.includes("/Modals/Ladder/")) MODAL_IMAGES.ladder = mod;
+    else if (path.includes("/Modals/Final-duel/")) {
+      if (id === "shaolin-wins") MODAL_IMAGES.finalDuelWin.shaolin = mod;
+      else if (id === "ninja-wins") MODAL_IMAGES.finalDuelWin.ninja = mod;
+      else MODAL_IMAGES.finalDuel = mod;
+    }
     continue;
   }
   let file = path.split("/").pop().replace(/\.png$/i, "").toLowerCase();
@@ -59,6 +70,40 @@ function poseImageFor(character, pose) {
   }
   const key = `${pose.type}-${pose.height}-${character}`.toLowerCase();
   return POSE_IMAGES[key] || null;
+}
+
+// Warm the browser's image cache once at module init. Vite's eager glob hands
+// us URL strings, but the browser only fetches + decodes a PNG when an <img>
+// element first renders it — that's the ~0.5–1.5s stall on the first time a
+// modal or battle pose opens. Kicking off a fetch and a background decode for
+// every URL up front means the cache (and decoded bitmap, where supported) is
+// already warm by the time React mounts the <img>.
+if (typeof window !== "undefined") {
+  const allUrls = new Set([
+    bambooBackground,
+    ...Object.values(POSE_IMAGES),
+    ...Object.values(EXTRA_POSE_IMAGES),
+    ...Object.values(MODAL_IMAGES.items),
+    ...Object.values(MODAL_IMAGES.traps),
+    MODAL_IMAGES.ladder,
+    MODAL_IMAGES.finalDuel,
+    MODAL_IMAGES.finalDuelWin.shaolin,
+    MODAL_IMAGES.finalDuelWin.ninja,
+  ].filter(Boolean));
+  // Retain references to the preloaded Image objects on the global module so
+  // the browser keeps the decoded bitmap in memory instead of evicting it once
+  // each `new Image()` goes out of scope.
+  const preloaded = [];
+  for (const url of allUrls) {
+    const img = new Image();
+    img.src = url;
+    if (typeof img.decode === "function") {
+      img.decode().catch(() => {});
+    }
+    preloaded.push(img);
+  }
+  // eslint-disable-next-line no-undef
+  if (typeof window !== "undefined") window.__SHAOLIN_PRELOADED_IMAGES__ = preloaded;
 }
 
 // =============================================================================
@@ -332,8 +377,8 @@ function placeHoles(tiles) {
 }
 
 function placeTraps(tiles, reserved) {
-  // 4 traps total. At generation we randomly pick 4 trap types from the pool
-  // of 6 (ALL_TRAP_TYPES) and assign one to each placed tile. Eligible 6..59.
+  // 5 traps total. At generation we randomly pick 5 trap types from the pool
+  // of 7 (ALL_TRAP_TYPES) and assign one to each placed tile. Eligible 6..59.
   // No within 2 of fight or hole. No two trap tiles adjacent.
   // Skips tiles reserved as hole landing points (must remain normal).
   // Must come AFTER the first item tile — i.e. no trap may precede the first
@@ -365,8 +410,8 @@ function placeTraps(tiles, reserved) {
     return result;
   }
 
-  // Random sample of 4 trap types from the 6 available, each appearing once.
-  const selectedTypes = shuffle(ALL_TRAP_TYPES).slice(0, 4);
+  // Random sample of 5 trap types from the 7 available, each appearing once.
+  const selectedTypes = shuffle(ALL_TRAP_TYPES).slice(0, 5);
   const placed = [];
   for (const trapType of selectedTypes) {
     const cand = eligibleFor(placed);
@@ -382,7 +427,8 @@ function placeLadders(tiles, holeReserved) {
   // 6 individual forward ladders. Each ladder drops the player STRAIGHT DOWN
   // to the same column, exactly one row below the origin. So for an origin
   // at grid (R, C) the destination is the path tile at (R+1, C).
-  //   - origin: a NORMAL tile (excluding hole landings and boss approach 60..63)
+  //   - origin: a NORMAL tile (excluding tile 1 — the start cannot be a
+  //     ladder — and hole landings and boss approach 60..63)
   //   - destination: NORMAL or ITEM (no fight, trap, hole, boss, or other ladder)
   //   - non-adjacent (dest ≥ origin + 2) — rules out the row-turn corners
   //     where (R, C) and (R+1, C) are path-adjacent
@@ -392,7 +438,7 @@ function placeLadders(tiles, holeReserved) {
   // Items are placed BEFORE this function so item destinations are valid.
 
   const candidates = [];
-  for (let origin = 1; origin <= 59; origin++) {
+  for (let origin = 2; origin <= 59; origin++) {
     if (tiles[origin].type !== T.NORMAL) continue;
     if (holeReserved.has(origin)) continue;
     const { row: rOrig, col } = tileGridPos(origin);
@@ -504,33 +550,59 @@ function validateBoard(tiles) {
   for (let i = 60; i <= 63; i++) {
     if (tiles[i].type !== T.NORMAL) return false;
   }
+  // Tile 1 (start) must not be a ladder.
+  if (tiles[1].type === T.LADDER) return false;
+  // Every row must contain at least one item tile.
+  const itemRows = new Set();
+  let itemCount = 0;
+  for (let i = 1; i <= 64; i++) {
+    if (tiles[i].type === T.ITEM) {
+      itemRows.add(tileGridPos(i).row);
+      itemCount++;
+    }
+  }
+  if (itemCount !== 12) return false;
+  for (let r = 0; r < ROWS; r++) {
+    if (!itemRows.has(r)) return false;
+  }
+  // Trap count must be 5.
+  let trapCount = 0;
+  for (let i = 1; i <= 64; i++) if (tiles[i].type === T.TRAP) trapCount++;
+  if (trapCount !== 5) return false;
   return true;
 }
 
 function placeItems(tiles, reservedDest) {
-  // 10 items; ≥2 must lie in tiles 1..32. Place on remaining normal tiles
-  // excluding all reserved tiles (hole destinations + ladder destinations).
+  // 12 items. Every row of the board must contain at least one item — the
+  // per-row guarantee implicitly handles the legacy "≥2 in tiles 1..32" rule
+  // because rows 0..3 cover tiles 1..32 (so they contribute ≥4 items in the
+  // first half). Eligible tiles are normal, in 4..59, and not reserved (hole
+  // destinations).
   const eligible = [];
   for (let i = 4; i <= 59; i++) {
     if (tiles[i].type !== T.NORMAL) continue;
     if (reservedDest.has(i)) continue;
     eligible.push(i);
   }
-  if (eligible.length < 10) return false;
+  if (eligible.length < 12) return false;
 
-  const firstHalf = eligible.filter((t) => t <= 32);
-  if (firstHalf.length < 2) return false;
+  const byRow = Array.from({ length: ROWS }, () => []);
+  for (const t of eligible) byRow[tileGridPos(t).row].push(t);
+  for (let r = 0; r < ROWS; r++) {
+    if (byRow[r].length === 0) return false; // can't guarantee coverage in this row
+  }
 
   const placed = new Set();
-  for (const t of shuffle(firstHalf)) {
-    if (placed.size >= 2) break;
-    placed.add(t);
+  // 1) Reserve one item per row so every row is covered.
+  for (let r = 0; r < ROWS; r++) {
+    placed.add(pick(byRow[r]));
   }
+  // 2) Fill remaining slots up to 12 from anywhere in the eligible pool.
   for (const t of shuffle(eligible)) {
-    if (placed.size >= 10) break;
+    if (placed.size >= 12) break;
     placed.add(t);
   }
-  if (placed.size < 10) return false;
+  if (placed.size < 12) return false;
 
   for (const t of placed) {
     tiles[t] = { num: t, type: T.ITEM };
@@ -2490,14 +2562,46 @@ function ItemModal({ variant, item, onClose }) {
 function FinalDuelIntroModal({ onBegin }) {
   return (
     <div style={MODAL_OVERLAY}>
-      <Draggable style={{ ...MODAL_BOX, maxWidth: 440, width: "90%", background: "#1a1008", border: "2px solid #d4af37", color: "#f5e8c4" }}>
-        <div style={{ fontSize: 48, marginBottom: 12 }}>⚔️</div>
+      <Draggable style={{ ...MODAL_BOX, maxWidth: 640, width: "94%", background: "#1a1008", border: "2px solid #d4af37", color: "#f5e8c4" }}>
+        <div
+          aria-label="Decisive Battle"
+          title="決戰 — Decisive Battle"
+          style={{
+            fontSize: 60,
+            lineHeight: 1,
+            marginBottom: 12,
+            color: "#d4af37",
+            textShadow: "0 0 20px rgba(212,175,55,0.55), 0 2px 4px rgba(0,0,0,0.6)",
+            fontFamily: '"Songti SC", "STKaiti", "DFKai-SB", "Noto Serif CJK SC", "SimSun", Georgia, serif',
+            fontWeight: 700,
+            letterSpacing: "0.15em",
+          }}
+        >
+          決戰
+        </div>
         <h2 style={{ margin: "0 0 8px 0", fontSize: 22, letterSpacing: 1, color: "#d4af37" }}>
           The rivals meet at last.
         </h2>
-        <p style={{ fontSize: 16, fontStyle: "italic", marginBottom: 24, color: "#c4ad7b" }}>
+        <p style={{ fontSize: 16, fontStyle: "italic", marginBottom: 20, color: "#c4ad7b" }}>
           The ultimate duel begins.
         </p>
+        {MODAL_IMAGES.finalDuel && (
+          <div style={{
+            width: "100%",
+            marginBottom: 22,
+            border: "1px solid #d4af37",
+            borderRadius: 10,
+            boxShadow: "0 0 12px rgba(212,175,55,0.18)",
+            overflow: "hidden",
+            lineHeight: 0,
+          }}>
+            <img
+              src={MODAL_IMAGES.finalDuel}
+              alt="The Final Duel"
+              style={{ display: "block", width: "100%", height: "auto" }}
+            />
+          </div>
+        )}
         <div style={{ display: "flex", gap: 20, justifyContent: "center", alignItems: "center", marginBottom: 28 }}>
           <span style={{ fontSize: 15, fontWeight: 700, color: "#22c55e" }}>🥋 Shaolin Master</span>
           <span style={{ fontSize: 18, color: "#d4af37" }}>vs</span>
@@ -2711,6 +2815,12 @@ function BattleScreen({
   const [outcome, setOutcome] = useState(null);     // { winner, reason }
   const [dice, setDice] = useState(null);           // { p1, p2, tries }
   const [finalWinner, setFinalWinner] = useState(null); // "p1" | "p2"
+  // The winner-portrait image lives in MODAL_IMAGES. Even with the module-init
+  // preload it can take a beat for the decoded bitmap to be ready, so we hold
+  // the end-screen render until decode resolves — otherwise the modal paints
+  // with an empty 0-height <img> and visibly re-layouts when the picture
+  // finally appears.
+  const [winnerImageReady, setWinnerImageReady] = useState(false);
 
   // Oracle's Eye reveal flags per player (one use per round).
   const [revealedByP1, setRevealedByP1] = useState(false);
@@ -2734,6 +2844,33 @@ function BattleScreen({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Pre-decode BOTH possible winner portraits as soon as the duel mounts so
+  // that, by the time the player has read the deciding round's reveal screen
+  // and clicked End battle, the end-screen modal can paint the portrait in the
+  // same frame — no empty-image gap between the reveal and the winner image.
+  useEffect(() => {
+    if (isSolo || !isFinal) return;
+    const urls = [
+      MODAL_IMAGES.finalDuelWin.shaolin,
+      MODAL_IMAGES.finalDuelWin.ninja,
+    ].filter(Boolean);
+    if (urls.length === 0) { setWinnerImageReady(true); return; }
+    let cancelled = false;
+    let pending = urls.length;
+    const tick = () => { if (--pending <= 0 && !cancelled) setWinnerImageReady(true); };
+    for (const url of urls) {
+      const img = new Image();
+      img.src = url;
+      if (typeof img.decode === "function") {
+        img.decode().then(tick).catch(tick);
+      } else {
+        img.onload = tick;
+        img.onerror = tick;
+      }
+    }
+    return () => { cancelled = true; };
+  }, [isSolo, isFinal]);
 
   function confirmP1() {
     if (!selecting) return;
@@ -2959,7 +3096,9 @@ function BattleScreen({
     if (isSolo) {
       onResolved(battleWinner === "p1" ? "won" : "lost");
     } else {
-      onResolved(battleWinner); // "p1" | "p2" — caller interprets
+      // "p1" | "p2" — caller interprets. Scores are forwarded so the parent's
+      // post-duel "The Duel is Over" summary modal can render the final pips.
+      onResolved(battleWinner, { scores });
     }
   }
 
@@ -3396,16 +3535,55 @@ function BattleScreen({
   function endScreen() {
     const battleWinner = scores.p1 >= winsToWin ? "p1" : "p2";
     if (!isSolo) {
-      const winnerLabel = battleWinner === "p1" ? p1Label : p2Label;
+      // Final duel: first reveal the winner's portrait. The follow-up "The Duel
+      // is Over" summary modal (with score pips and the Start New Game button)
+      // is rendered by the parent after this Continue resolves the battle.
+      // Hold the modal back until the portrait has decoded — otherwise the
+      // first paint shows the text + empty image frame for a beat.
+      if (!winnerImageReady) return null;
+      const winnerChar = battleWinner === "p1" ? activeCharacter : otherCharacter;
+      const winnerName = winnerChar === "shaolin" ? "Shaolin Master" : "Ninja Warrior";
+      const winnerIcon = winnerChar === "shaolin" ? "🥋" : "🥷";
+      const winnerImg = MODAL_IMAGES.finalDuelWin[winnerChar];
+      const flavor = winnerChar === "shaolin"
+        ? "The Shadow Clan is defeated. Peace is restored."
+        : "The Shaolin Master has fallen. Darkness prevails.";
       return (
-        <Draggable style={{ ...MODAL_BOX, maxWidth: 420, width: "90%" }}>
-          <div style={{ fontSize: 40, marginBottom: 8 }}>⚔️</div>
-          <h2 style={{ margin: "0 0 10px 0", fontSize: 20 }}>The Duel is Over</h2>
-          <ScorePips scores={scores} p1Label={p1Label} p2Label={p2Label} winsToWin={winsToWin} />
-          <p style={{ fontSize: 15, fontWeight: 700, marginBottom: 20, color: "#5a4317" }}>
-            {winnerLabel} wins the ultimate duel.
-          </p>
-          <button style={BTN_PRIMARY} onClick={finishBattle}>Continue</button>
+        <Draggable style={{
+          ...MODAL_BOX,
+          maxWidth: 640, width: "94%",
+          background: "#120d04",
+          border: "2px solid #d4af37",
+          color: "#f5e8c4",
+        }}>
+          <div style={{ fontSize: 52, marginBottom: 12 }}>{winnerIcon}</div>
+          <h1 style={{ margin: "0 0 10px 0", fontSize: 22, color: "#d4af37", letterSpacing: 1 }}>
+            {winnerName} wins the ultimate duel.
+          </h1>
+          <p style={{ fontSize: 14, color: "#c4ad7b", marginBottom: 20 }}>{flavor}</p>
+          {winnerImg && (
+            <div style={{
+              width: "100%",
+              marginBottom: 24,
+              border: "1px solid #d4af37",
+              borderRadius: 10,
+              boxShadow: "0 0 12px rgba(212,175,55,0.18)",
+              overflow: "hidden",
+              lineHeight: 0,
+            }}>
+              <img
+                src={winnerImg}
+                alt={`${winnerName} wins`}
+                style={{ display: "block", width: "100%", height: "auto" }}
+              />
+            </div>
+          )}
+          <button
+            style={{ ...BTN_PRIMARY, background: "#d4af37", color: "#120d04", fontSize: 15, padding: "12px 28px" }}
+            onClick={finishBattle}
+          >
+            Continue
+          </button>
         </Draggable>
       );
     }
@@ -3468,6 +3646,9 @@ export default function ShaolinGame() {
   const [modal, setModal] = useState(null); // null | { type, resolve, ...data }
   const [lastRoll, setLastRoll] = useState(null); // null | { value, character }
   const [gameWinner, setGameWinner] = useState(null); // null | "shaolin" | "ninja"
+  // Final scores from the duel (e.g. { p1: 3, p2: 1 }, with p1 = Shaolin) —
+  // captured at finishBattle so the game-over summary modal can render them.
+  const [finalDuelScores, setFinalDuelScores] = useState(null);
   const [shaolinInventory, setShaolinInventory] = useState({ sorceries: [], extraPoses: [] });
   const [ninjaInventory, setNinjaInventory] = useState({ sorceries: [], extraPoses: [] });
   const [shaolinDepleted, setShaolinDepleted] = useState(() => new Set());
@@ -3550,6 +3731,7 @@ export default function ShaolinGame() {
     setCurrentTurn("any");
     setLastRoll(null);
     setGameWinner(null);
+    setFinalDuelScores(null);
     resetPlayerProgress();
   }
 
@@ -3561,6 +3743,7 @@ export default function ShaolinGame() {
     setCurrentTurn(null);
     setLastRoll(null);
     setGameWinner(null);
+    setFinalDuelScores(null);
     resetPlayerProgress();
   }
 
@@ -4441,21 +4624,28 @@ export default function ShaolinGame() {
         }}>
           <Draggable style={{
             ...MODAL_BOX,
-            maxWidth: 480, width: "90%",
+            maxWidth: 460, width: "92%",
             background: "#120d04",
             border: "2px solid #d4af37",
             color: "#f5e8c4",
           }}>
-            <div style={{ fontSize: 52, marginBottom: 12 }}>
-              {gameWinner === "shaolin" ? "🥋" : "🥷"}
-            </div>
+            <div style={{ fontSize: 44, marginBottom: 8 }}>⚔️</div>
             <h1 style={{ margin: "0 0 10px 0", fontSize: 22, color: "#d4af37", letterSpacing: 1 }}>
-              {gameWinner === "shaolin" ? "Shaolin Master" : "Ninja Warrior"} wins the ultimate duel.
+              The Duel is Over
             </h1>
-            <p style={{ fontSize: 14, color: "#c4ad7b", marginBottom: 28 }}>
-              {gameWinner === "shaolin"
-                ? "The Shadow Clan is defeated. Peace is restored."
-                : "The Shaolin Master has fallen. Darkness prevails."}
+            {finalDuelScores && (
+              <ScorePips
+                scores={finalDuelScores}
+                p1Label="🥋 Shaolin Master"
+                p2Label="🥷 Ninja Warrior"
+                winsToWin={3}
+                onDark={true}
+                nameColor="#f5e8c4"
+                vsColor="#d4af37"
+              />
+            )}
+            <p style={{ fontSize: 15, fontWeight: 700, marginBottom: 24, color: "#f5e8c4" }}>
+              {gameWinner === "shaolin" ? "Shaolin Master" : "Ninja Warrior"} wins the ultimate duel.
             </p>
             <button
               style={{ ...BTN_PRIMARY, background: "#d4af37", color: "#120d04", fontSize: 15, padding: "12px 28px" }}
@@ -4526,7 +4716,10 @@ export default function ShaolinGame() {
                   : computeCombatRating(ninjaBattleLog))
               : 0
           }
-          onResolved={(result) => modal.resolve(result)}
+          onResolved={(result, info) => {
+            if (info?.scores) setFinalDuelScores(info.scores);
+            modal.resolve(result);
+          }}
         />
       )}
       {modal?.type === "item" && (

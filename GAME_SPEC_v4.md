@@ -50,12 +50,12 @@ is always visually distinct regardless of its position.
 
 ### Tile Distribution (64 tiles total)
 
-- 28 normal tiles
+- 25 normal tiles
 - 12 fight tiles
-- 10 item tiles
-- 6 ladder tiles (all forward-facing, toward the boss)
-- 4 trap tiles (one per trap type)
-- 3 hole tiles (forward skips of 1 or 2 rows)
+- 12 item tiles (at list one item tile per "board row")
+- 6 ladder tiles (all forward-facing, in the direcrion of the boss)
+- 5 trap tiles (one per trap type)
+- 3 hole tiles (forward skip 1 row)
 - 1 boss tile (tile 64)
 
 ### Hole Mechanics
