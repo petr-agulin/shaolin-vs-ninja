@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import bambooBackground from "./IMAGES/Bamboo.jpg";
 import { getFinalStory } from "./FinalStories.js";
+import { getGameStartStory } from "./GameStartStory.js";
 
 // Eagerly import every pose image. Images live in per-character subfolders
 // under IMAGES/. File names follow these patterns:
@@ -27,6 +28,7 @@ const MODAL_IMAGES = {
   ladder: null,
   finalDuel: null,
   finalDuelWin: { shaolin: null, ninja: null },
+  gameStart: null,
 };
 for (const path in ALL_POSE_IMAGE_MODULES) {
   const mod = ALL_POSE_IMAGE_MODULES[path];
@@ -40,6 +42,7 @@ for (const path in ALL_POSE_IMAGE_MODULES) {
       else if (id === "ninja-wins") MODAL_IMAGES.finalDuelWin.ninja = mod;
       else MODAL_IMAGES.finalDuel = mod;
     }
+    else if (path.includes("/Modals/Game-start/")) MODAL_IMAGES.gameStart = mod;
     continue;
   }
   let file = path.split("/").pop().replace(/\.png$/i, "").toLowerCase();
@@ -90,6 +93,7 @@ if (typeof window !== "undefined") {
     MODAL_IMAGES.finalDuel,
     MODAL_IMAGES.finalDuelWin.shaolin,
     MODAL_IMAGES.finalDuelWin.ninja,
+    MODAL_IMAGES.gameStart,
   ].filter(Boolean));
   // Retain references to the preloaded Image objects on the global module so
   // the browser keeps the decoded bitmap in memory instead of evicting it once
@@ -693,8 +697,8 @@ function TileRect({ tile }) {
         <rect x={x} y={y} width={TILE} height={TILE} rx={8}
               fill={pinkFill} stroke={pinkEdge} strokeWidth={2} />
         <NumBadge x={x + 5} y={y + 13} n={n} />
-        <CenteredLabel cx={cx} cy={cy - 4} text="FINAL" fill={PALETTE.text} size={11} />
-        <CenteredLabel cx={cx} cy={cy + 9} text="DUEL" fill={PALETTE.text} size={11} />
+        <CenteredLabel cx={cx} cy={cy - 8} text="♔" fill={PALETTE.text} size={18} />
+        <CenteredLabel cx={cx} cy={cy + 10} text="DUEL" fill={PALETTE.text} size={11} />
       </g>
     );
   }
@@ -706,7 +710,7 @@ function TileRect({ tile }) {
         <rect x={x} y={y} width={TILE} height={TILE} rx={6}
               fill={c} stroke="#0a0a0a" strokeWidth={1.5} />
         <NumBadge x={x + 5} y={y + 13} n={n} light />
-        <CenteredLabel cx={cx} cy={cy - 4} text="FIGHT" fill={PALETTE.textLight} size={11} />
+        <CenteredLabel cx={cx} cy={cy - 8} text="⚔" fill={PALETTE.textLight} size={16} />
         <CenteredLabel cx={cx} cy={cy + 10} text={NINJA[tile.ninja].short} fill={PALETTE.textLight} size={10} weight={500} />
       </g>
     );
@@ -719,8 +723,8 @@ function TileRect({ tile }) {
         <rect x={x} y={y} width={TILE} height={TILE} rx={6}
               fill={PALETTE.item} stroke={PALETTE.itemEdge} strokeWidth={1.5} />
         <NumBadge x={x + 5} y={y + 13} n={n} />
-        <CenteredLabel cx={cx} cy={cy - 6} text="ITEM" fill={PALETTE.text} size={11} />
-        <CenteredLabel cx={cx} cy={cy + 7} text="?" fill={PALETTE.text} size={14} weight={800} />
+        <CenteredLabel cx={cx} cy={cy - 8} text="✦" fill={PALETTE.text} size={16} />
+        <CenteredLabel cx={cx} cy={cy + 10} text="ITEM" fill={PALETTE.text} size={11} />
         {isLadderDest && (
           <CenteredLabel cx={cx} cy={cy + 22} text={`from ${tile.ladderDestFrom}`}
                          fill={PALETTE.text} size={9} weight={600} />
@@ -2558,6 +2562,125 @@ function ItemModal({ variant, item, onClose }) {
   );
 }
 
+// ---- StartScreen -----------------------------------------------------------
+// Full-screen overlay shown before any game begins (and again after each
+// "Start New Game" click in the final-duel post-game modal). Hosts a hero
+// image, an intro story (default text from GameStartStory.js for now —
+// later swapped with an LLM-generated text when user configures their LLM),
+// and three actions: start, settings (future), share (future).
+
+function StartScreen({ onStart, onSettings, onShare }) {
+  const story = getGameStartStory();
+  return (
+    <div style={{
+      position: "fixed", inset: 0,
+      background: "#0d0905",
+      zIndex: 3000,
+      display: "flex", justifyContent: "center", alignItems: "flex-start",
+      overflowY: "auto",
+      padding: "32px 16px",
+      fontFamily: "Georgia, serif",
+    }}>
+      <div style={{
+        maxWidth: 720, width: "100%",
+        background: "#1a1008",
+        border: "2px solid #d4af37",
+        borderRadius: 14,
+        padding: "28px 32px 32px 32px",
+        boxShadow: "0 8px 40px rgba(0,0,0,0.6)",
+        color: "#f5e8c4",
+        textAlign: "center",
+      }}>
+        <h1 style={{
+          margin: "0 0 6px 0",
+          fontSize: 28,
+          letterSpacing: 1.5,
+          color: "#d4af37",
+        }}>
+          Shaolin vs Ninja
+        </h1>
+        <div style={{ fontSize: 13, color: "#c4ad7b", fontStyle: "italic", marginBottom: 18 }}>
+          A duel of fortune, fate, and martial wisdom.
+        </div>
+        {MODAL_IMAGES.gameStart && (
+          <div style={{
+            width: "100%",
+            marginBottom: 22,
+            border: "1px solid #d4af37",
+            borderRadius: 10,
+            boxShadow: "0 0 12px rgba(212,175,55,0.18)",
+            overflow: "hidden",
+            lineHeight: 0,
+          }}>
+            <img
+              src={MODAL_IMAGES.gameStart}
+              alt="Shaolin vs Ninja"
+              style={{ display: "block", width: "100%", height: "auto" }}
+            />
+          </div>
+        )}
+        <div style={{
+          textAlign: "center",
+          padding: "16px 18px",
+          marginBottom: 24,
+          background: "rgba(245,232,196,0.05)",
+          border: "1px solid rgba(212,175,55,0.45)",
+          borderRadius: 8,
+          color: "#e8dcb0",
+          fontSize: 14.5,
+          lineHeight: 1.65,
+        }}>
+          {story.split(/\n\s*\n/).map((para, i) => (
+            <p key={i} style={{ margin: i === 0 ? "0 0 12px 0" : "0 0 12px 0" }}>
+              {para.trim()}
+            </p>
+          ))}
+        </div>
+        <div style={{
+          display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap",
+        }}>
+          <button
+            onClick={onStart}
+            style={{
+              ...BTN_PRIMARY,
+              background: "#d4af37", color: "#1a1008",
+              fontSize: 15, padding: "12px 28px",
+            }}
+          >
+            ▶ Start Game
+          </button>
+          <button
+            onClick={onSettings}
+            title="Configure LLM and other options (coming soon)"
+            style={{
+              ...BTN_SECONDARY,
+              background: "transparent",
+              border: "1px solid #d4af37",
+              color: "#d4af37",
+              fontSize: 14, padding: "11px 22px",
+            }}
+          >
+            ⚙ Settings
+          </button>
+          <button
+            onClick={onShare}
+            title="Share a link and preview to LinkedIn, GitHub, etc. (coming soon)"
+            style={{
+              ...BTN_SECONDARY,
+              background: "transparent",
+              border: "1px solid #d4af37",
+              color: "#d4af37",
+              fontSize: 14, padding: "11px 22px",
+            }}
+          >
+            ↗ Share
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ---- FinalDuelIntroModal ---------------------------------------------------
 
 function FinalDuelIntroModal({ onBegin }) {
@@ -3691,6 +3814,9 @@ export default function ShaolinGame() {
   const [ninjaTrappedTiles, setNinjaTrappedTiles] = useState(() => new Set());
   const [skipNotice, setSkipNotice] = useState(null); // transient "turn skipped" banner
   const [forcedRoll, setForcedRoll] = useState(null); // testing: null = random, else 1..6
+  // Pre-game overlay shown at first load and after each "Start New Game" click
+  // in the final-duel post-game modal.
+  const [showStartScreen, setShowStartScreen] = useState(true);
 
   function showModal(data) {
     return new Promise((resolve) => {
@@ -4498,11 +4624,18 @@ export default function ShaolinGame() {
       minHeight: "100vh", padding: 20, background: "#1f1a10",
       fontFamily: "Georgia, serif", color: "#fdf6e3",
     }}>
+      {showStartScreen && (
+        <StartScreen
+          onStart={() => { setShowStartScreen(false); startGame(); }}
+          onSettings={() => { /* TODO: settings dialog (LLM config, etc.) */ }}
+          onShare={() => { /* TODO: share link + preview image */ }}
+        />
+      )}
       <h1 style={{ margin: "0 0 4px 0", letterSpacing: 1 }}>
         Shaolin vs Ninja
       </h1>
       <div style={{ fontSize: 13, opacity: 0.7, marginBottom: 16 }}>
-        Phase 3 — Two-player
+        A duel of fortune, fate, and martial wisdom.
       </div>
 
       <div style={{ marginBottom: 16, display: "flex", gap: 10, flexWrap: "wrap" }}>
@@ -4694,7 +4827,7 @@ export default function ShaolinGame() {
             </div>
             <button
               style={{ ...BTN_PRIMARY, background: "#d4af37", color: "#120d04", fontSize: 15, padding: "12px 28px", flex: "0 0 auto" }}
-              onClick={regenerate}
+              onClick={() => { regenerate(); setShowStartScreen(true); }}
             >
               ↺ Start New Game
             </button>
