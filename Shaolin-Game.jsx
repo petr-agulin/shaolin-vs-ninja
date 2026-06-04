@@ -429,72 +429,113 @@ function placeTraps(tiles, reserved) {
 }
 
 function placeLadders(tiles, holeReserved) {
-  // 6 individual forward ladders. Each ladder drops the player STRAIGHT DOWN
-  // to the same column, exactly one row below the origin. So for an origin
-  // at grid (R, C) the destination is the path tile at (R+1, C).
-  //   - origin: a NORMAL tile (excluding tile 1 — the start cannot be a
-  //     ladder — and hole landings and boss approach 60..63)
-  //   - destination: NORMAL or ITEM (no fight, trap, hole, boss, or other ladder)
-  //   - non-adjacent (dest ≥ origin + 2) — rules out the row-turn corners
-  //     where (R, C) and (R+1, C) are path-adjacent
-  // Global constraints:
-  //   - ≥1 origin in tiles 1..32 and ≥1 in tiles 33..63
-  //   - max 2 ladder origins per row
+  // 6 ladder tiles arranged as a fixed mix of directional ladders. Every
+  // ladder connects two tiles one row apart in the SAME column:
+  //   - 2 DOWN-only ladders: an origin tile that climbs DOWN to (R+1, C).
+  //   - 2 UP-only ladders:   an origin tile that climbs UP   to (R-1, C).
+  //   - 1 BOTH-WAY ladder:   a vertical pair of tiles that are BOTH ladder
+  //       tiles. The top tile climbs down to the bottom tile, the bottom
+  //       tile climbs up to the top tile. It occupies 2 of the 6 ladder
+  //       tiles and visually reads as a single ladder linking two ladder
+  //       tiles (so it never lands on an item).
+  // For DOWN/UP ladders the destination is a NORMAL or ITEM tile (landing on
+  // an item is allowed). All ladders must be path-non-adjacent (|a - b| ≥ 2),
+  // ruling out the row-turn corners where the vertical neighbour is already
+  // path-adjacent. Shared rules:
+  //   - a ladder tile is a NORMAL tile, excluding tile 1, hole landings, and
+  //     the boss approach 60..63 (origin range 2..59)
+  //   - ≥1 ladder tile in tiles 1..32 and ≥1 in tiles 33..63
+  //   - max 2 ladder tiles per row; no two ladder tiles path-adjacent
+  //   - a DOWN/UP ladder never lands on another ladder tile
   // Items are placed BEFORE this function so item destinations are valid.
 
-  const candidates = [];
-  for (let origin = 2; origin <= 59; origin++) {
-    if (tiles[origin].type !== T.NORMAL) continue;
-    if (holeReserved.has(origin)) continue;
-    const { row: rOrig, col } = tileGridPos(origin);
-    if (rOrig + 1 >= ROWS) continue; // last row has no level below
-    const dest = gridPosToTile(rOrig + 1, col);
-    if (dest === null) continue;
-    if (dest <= origin || dest === 64) continue;
-    if (dest - origin < 2) continue; // skip path-adjacent row-turn cases
-    const dt = tiles[dest]?.type;
-    if (dt !== T.NORMAL && dt !== T.ITEM) continue;
-    candidates.push({ origin, dest });
+  const upOf = (n) => { const { row, col } = tileGridPos(n); return row > 0 ? gridPosToTile(row - 1, col) : null; };
+  const downOf = (n) => { const { row, col } = tileGridPos(n); return row < ROWS - 1 ? gridPosToTile(row + 1, col) : null; };
+  const freeNormal = (n) =>
+    n != null && n >= 2 && n <= 59 && tiles[n]?.type === T.NORMAL && !holeReserved.has(n);
+  const landable = (n) =>
+    n != null && n !== 64 && (tiles[n]?.type === T.NORMAL || tiles[n]?.type === T.ITEM);
+
+  // Candidate lists (origin tiles).
+  const downCands = [];
+  const upCands = [];
+  const bothCands = []; // { top, bottom }
+  for (let o = 2; o <= 59; o++) {
+    if (tiles[o].type !== T.NORMAL || holeReserved.has(o)) continue;
+    const d = downOf(o);
+    const u = upOf(o);
+    if (landable(d) && Math.abs(d - o) >= 2) downCands.push({ origin: o, dest: d });
+    if (landable(u) && Math.abs(u - o) >= 2) upCands.push({ origin: o, dest: u });
+    // Both-way: o is the TOP tile, downOf(o) the BOTTOM — both must be free
+    // NORMAL tiles (they will both become ladder tiles).
+    if (freeNormal(o) && freeNormal(d) && Math.abs(d - o) >= 2) {
+      bothCands.push({ top: o, bottom: d });
+    }
   }
-  if (candidates.length < 6) return null;
 
-  for (let attempt = 0; attempt < 200; attempt++) {
-    const pool = shuffle(candidates);
-    const usedOrigins = new Set();
-    const usedDests = new Set();
-    const rowCounts = new Array(ROWS).fill(0);
-    const chosen = [];
-    let firstHalf = 0, secondHalf = 0;
+  for (let attempt = 0; attempt < 400; attempt++) {
+    const used = new Set();      // every ladder tile (origins + both endpoints)
+    const usedDest = new Set();  // landing tiles of DOWN/UP ladders
+    const rowCount = new Array(ROWS).fill(0);
+    const placements = [];       // { tile, kind, climbDir, dest }
 
-    for (const cand of pool) {
-      if (chosen.length >= 6) break;
-      if (usedOrigins.has(cand.origin)) continue;
-      // An origin can't double as another ladder's destination, and vice
-      // versa — a ladder must never land on another ladder.
-      if (usedDests.has(cand.origin)) continue;
-      if (usedOrigins.has(cand.dest)) continue;
-      // No two ladder origins may be on path-adjacent tiles.
-      if (usedOrigins.has(cand.origin - 1) || usedOrigins.has(cand.origin + 1)) continue;
-      const { row } = tileGridPos(cand.origin);
-      if (rowCounts[row] >= 2) continue;
-
-      chosen.push(cand);
-      usedOrigins.add(cand.origin);
-      usedDests.add(cand.dest);
-      rowCounts[row]++;
-      if (cand.origin <= 32) firstHalf++; else secondHalf++;
-    }
-
-    if (chosen.length === 6 && firstHalf >= 1 && secondHalf >= 1) {
-      chosen.forEach((p, idx) => {
-        tiles[p.origin] = {
-          num: p.origin, type: T.LADDER, ladderId: idx, dest: p.dest,
-        };
-        // Tag the destination tile (preserves its original NORMAL or ITEM type).
-        tiles[p.dest] = { ...tiles[p.dest], ladderDestFrom: p.origin };
-      });
+    const claimTile = (n) => {
+      if (!freeNormal(n) || used.has(n) || usedDest.has(n)) return false;
+      if (used.has(n - 1) || used.has(n + 1)) return false; // no path-adjacent ladders
+      if (rowCount[tileGridPos(n).row] >= 2) return false;
       return true;
+    };
+
+    // 1) BOTH-WAY pair first (the tightest constraint — two adjacent tiles).
+    let ok = true;
+    const bp = shuffle(bothCands).find((c) => claimTile(c.top) && claimTile(c.bottom));
+    if (!bp) continue;
+    used.add(bp.top); used.add(bp.bottom);
+    rowCount[tileGridPos(bp.top).row]++;
+    rowCount[tileGridPos(bp.bottom).row]++;
+    placements.push({ tile: bp.top, kind: "both", climbDir: "down", dest: bp.bottom });
+    placements.push({ tile: bp.bottom, kind: "both", climbDir: "up", dest: bp.top });
+
+    // 2) Place N directional ladders from a candidate pool.
+    const placeDirectional = (cands, kind, climbDir, count) => {
+      let placed = 0;
+      for (const c of shuffle(cands)) {
+        if (placed >= count) break;
+        if (!claimTile(c.origin)) continue;
+        // The landing tile must stay a non-ladder NORMAL/ITEM tile and not be
+        // shared with another ladder.
+        if (used.has(c.dest) || usedDest.has(c.dest)) continue;
+        if (tiles[c.dest].type !== T.NORMAL && tiles[c.dest].type !== T.ITEM) continue;
+        used.add(c.origin);
+        usedDest.add(c.dest);
+        rowCount[tileGridPos(c.origin).row]++;
+        placements.push({ tile: c.origin, kind, climbDir, dest: c.dest });
+        placed++;
+      }
+      return placed === count;
+    };
+
+    if (!placeDirectional(downCands, "down", "down", 2)) ok = false;
+    if (ok && !placeDirectional(upCands, "up", "up", 2)) ok = false;
+    if (!ok) continue;
+
+    // 3) Global balance: ≥1 ladder tile in each half.
+    let firstHalf = 0, secondHalf = 0;
+    for (const p of placements) (p.tile <= 32 ? firstHalf++ : secondHalf++);
+    if (firstHalf < 1 || secondHalf < 1) continue;
+
+    // Commit.
+    for (const p of placements) {
+      tiles[p.tile] = {
+        num: p.tile, type: T.LADDER, ladderKind: p.kind,
+        climbDir: p.climbDir, dest: p.dest,
+      };
     }
+    // Tag DOWN/UP landing tiles (preserves their NORMAL/ITEM type).
+    for (const p of placements) {
+      if (p.kind !== "both") tiles[p.dest] = { ...tiles[p.dest], ladderDestFrom: p.tile };
+    }
+    return true;
   }
   return null;
 }
@@ -526,28 +567,46 @@ function validateBoard(tiles) {
   for (let i = 1; i < holeOrigins.length; i++) {
     if (holeOrigins[i] - holeOrigins[i - 1] < 2) return false;
   }
-  // Ladders: forward-only, land on NORMAL or ITEM, non-adjacent, ≤2 per row,
-  // ≥1 in first half and ≥1 in second half.
+  // Ladders: a fixed mix of 2 DOWN-only, 2 UP-only, and 1 BOTH-WAY ladder
+  // (the both-way occupies 2 mutually-linked ladder tiles). Every ladder
+  // links two tiles one row apart in the same column, path-non-adjacent.
+  // DOWN/UP land on a NORMAL or ITEM tile; the both-way pair link each other.
+  // ≤2 ladder tiles per row, ≥1 in each half, no two ladder tiles
+  // path-adjacent, and DOWN/UP never land on another ladder tile.
   let ladderFirstHalf = 0, ladderSecondHalf = 0;
+  let downCount = 0, upCount = 0, bothCount = 0;
   const ladderRowCounts = new Array(ROWS).fill(0);
   for (let i = 1; i <= 64; i++) {
     const t = tiles[i];
     if (t.type !== T.LADDER) continue;
-    if (!t.dest || t.dest <= i) return false;
-    if (t.dest - i < 2) return false;
+    const { row, col } = tileGridPos(i);
+    const expUp   = row > 0        ? gridPosToTile(row - 1, col) : null;
+    const expDown = row < ROWS - 1 ? gridPosToTile(row + 1, col) : null;
+    const expected = t.climbDir === "up" ? expUp : expDown;
+    if (t.dest == null || t.dest !== expected) return false;
+    if (Math.abs(t.dest - i) < 2) return false;
     const d = tiles[t.dest];
     if (!d) return false;
-    if (d.type !== T.NORMAL && d.type !== T.ITEM) return false;
-    // Spec: vertical one-level-down, same column.
-    const { row: rOrig, col } = tileGridPos(i);
-    const expected = gridPosToTile(rOrig + 1, col);
-    if (t.dest !== expected) return false;
+    if (t.ladderKind === "both") {
+      // Both-way tiles link each other and must be opposite directions.
+      if (d.type !== T.LADDER || d.ladderKind !== "both") return false;
+      if (d.dest !== i) return false;
+      if (d.climbDir === t.climbDir) return false;
+      bothCount++;
+    } else {
+      // DOWN/UP land on a non-ladder NORMAL or ITEM tile.
+      if (d.type !== T.NORMAL && d.type !== T.ITEM) return false;
+      if (t.ladderKind === "down" && t.climbDir !== "down") return false;
+      if (t.ladderKind === "up" && t.climbDir !== "up") return false;
+      if (t.climbDir === "down") downCount++; else upCount++;
+    }
     if (i <= 32) ladderFirstHalf++; else ladderSecondHalf++;
-    ladderRowCounts[tileGridPos(i).row]++;
+    ladderRowCounts[row]++;
   }
+  if (downCount !== 2 || upCount !== 2 || bothCount !== 2) return false;
   if (ladderFirstHalf < 1 || ladderSecondHalf < 1) return false;
   for (const c of ladderRowCounts) if (c > 2) return false;
-  // No two ladder origins on path-adjacent tiles.
+  // No two ladder tiles on path-adjacent positions.
   for (let i = 1; i < 64; i++) {
     if (tiles[i].type === T.LADDER && tiles[i + 1]?.type === T.LADDER) return false;
   }
@@ -734,13 +793,15 @@ function TileRect({ tile }) {
   }
 
   if (tile.type === T.LADDER) {
+    const arrow = tile.climbDir === "up" ? "↑" : "↓";
+    const label = tile.ladderKind === "both" ? "LADDER ⇅" : "LADDER";
     return (
       <g>
         <rect x={x} y={y} width={TILE} height={TILE} rx={6}
               fill={PALETTE.ladder} stroke={PALETTE.ladderEdge} strokeWidth={1.5} />
         <NumBadge x={x + 5} y={y + 13} n={n} />
-        <CenteredLabel cx={cx} cy={cy - 4} text="LADDER" fill={PALETTE.text} size={9} />
-        <CenteredLabel cx={cx} cy={cy + 10} text={`↓ ${tile.dest}`} fill={PALETTE.text} size={12} weight={700} />
+        <CenteredLabel cx={cx} cy={cy - 4} text={label} fill={PALETTE.text} size={9} />
+        <CenteredLabel cx={cx} cy={cy + 10} text={`${arrow} ${tile.dest}`} fill={PALETTE.text} size={12} weight={700} />
       </g>
     );
   }
@@ -983,9 +1044,14 @@ function PathArrows({ tiles }) {
 function Board({ tiles, shaolinTile, ninjaTile, gameStarted }) {
   const ladderLinks = useMemo(() => {
     const links = [];
+    const seen = new Set();
     for (let i = 1; i <= 64; i++) {
       const t = tiles[i];
-      if (t.type !== T.LADDER) continue;
+      if (t.type !== T.LADDER || t.dest == null) continue;
+      // Dedupe the both-way pair (its two tiles point at each other).
+      const key = i < t.dest ? `${i}-${t.dest}` : `${t.dest}-${i}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
       links.push({ origin: i, dest: t.dest });
     }
     return links;
@@ -1068,7 +1134,7 @@ function summarize(tiles) {
     if (t.type === T.TRAP) trapList.push({ tile: i, trap: t.trap });
     if (t.type === T.HOLE) holeList.push({ tile: i, fallRows: t.fallRows, dest: t.dest });
     if (t.type === T.LADDER) {
-      ladderList.push({ origin: i, dest: t.dest, destType: tiles[t.dest].type });
+      ladderList.push({ origin: i, kind: t.ladderKind, climbDir: t.climbDir, dest: t.dest });
     }
   }
   ladderList.sort((a, b) => a.origin - b.origin);
@@ -1136,8 +1202,8 @@ function InfoPanel({ tiles, attempts, onRegenerate, isRolling }) {
         <strong>Ladders</strong>
         {s.ladderList.map((l, i) => (
           <div key={i} style={{ display: "flex", justifyContent: "space-between" }}>
-            <span>tile {l.origin}</span>
-            <span>↓ {l.dest}{l.destType === T.ITEM ? " (item)" : ""}</span>
+            <span>tile {l.origin}{l.kind === "both" ? " (2-way)" : ""}</span>
+            <span>{l.climbDir === "up" ? "↑" : "↓"} {l.dest}</span>
           </div>
         ))}
       </div>
@@ -1434,7 +1500,7 @@ function formatSignedRating(r) {
 // PHASE 4 — MODAL COMPONENTS
 // =============================================================================
 
-function LadderModal({ tileNum, dest, onUse, onStay }) {
+function LadderModal({ tileNum, climbDir, dest, bothWay, onClimb, onStay }) {
   const overlayStyle = {
     position: "fixed", inset: 0,
     background: "rgba(0,0,0,0.42)",
@@ -1469,17 +1535,24 @@ function LadderModal({ tileNum, dest, onUse, onStay }) {
     <div style={overlayStyle}>
       <Draggable style={boxStyle}>
         <div style={{ fontSize: 40, marginBottom: 8 }}>🪜</div>
-        <h2 style={{ margin: "0 0 12px 0", fontSize: 20 }}>A Ladder!</h2>
+        <h2 style={{ margin: "0 0 12px 0", fontSize: 20 }}>
+          {bothWay ? "A Two-Way Ladder!" : "A Ladder!"}
+        </h2>
         <p style={{ fontStyle: "italic", fontSize: 14, lineHeight: 1.6, marginBottom: 16, color: "#6b4f1a" }}>
-          "Each rung climbed is a battle won — rise swiftly, warrior, for the summit awaits."
+          {climbDir === "up"
+            ? '"Sometimes the wise warrior retreats a step to find firmer ground."'
+            : '"Each rung climbed is a battle won — rise swiftly, warrior, for the summit awaits."'}
         </p>
         <FramedIllustration src={MODAL_IMAGES.ladder} alt="Ladder" />
         <p style={{ fontSize: 13, marginBottom: 22, color: "#7a5500" }}>
-          This ladder leads to tile <strong>{dest}</strong>.
-          Do you descend, or hold your ground?
+          {climbDir === "up"
+            ? <>This ladder leads up to tile <strong>{dest}</strong>. Do you climb, or hold your ground?</>
+            : <>This ladder leads down to tile <strong>{dest}</strong>. Do you descend, or hold your ground?</>}
         </p>
-        <div style={{ display: "flex", gap: 12, justifyContent: "center" }}>
-          <button style={btnPrimary} onClick={onUse}>Climb down</button>
+        <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
+          <button style={btnPrimary} onClick={onClimb}>
+            {climbDir === "up" ? `Climb up → ${dest}` : `Climb down → ${dest}`}
+          </button>
           <button style={btnSecondary} onClick={onStay}>Continue forward</button>
         </div>
       </Draggable>
@@ -4082,11 +4155,17 @@ export default function ShaolinGame() {
 
       if (t.type === T.LADDER) {
         await sleep(400);
-        const choice = await showModal({ type: "ladder", tileNum: tile, dest: t.dest });
+        const choice = await showModal({
+          type: "ladder", tileNum: tile, climbDir: t.climbDir, dest: t.dest,
+          bothWay: t.ladderKind === "both",
+        });
         setModal(null);
-        if (choice === "use") {
+        if (choice === "climb") {
           setTile(t.dest);
-          // Apply landing logic on the ladder destination (could be an item).
+          // A both-way ladder lands on its partner ladder tile — traversal is
+          // complete, so don't re-prompt. DOWN/UP land on a NORMAL/ITEM tile,
+          // whose landing logic (e.g. item pickup) still resolves.
+          if (t.ladderKind === "both") return t.dest;
           return await resolveLanding(t.dest);
         }
         return tile;
@@ -4537,17 +4616,26 @@ export default function ShaolinGame() {
       }
 
       // Ladder modal opens every time the chip touches a ladder tile,
-      // whether passing through or landing. "Use" jumps to the destination
-      // and ends the move; "Stay" leaves the chip on the ladder and the
-      // remaining dice steps continue normally.
+      // whether passing through or landing. Climbing (up or down) jumps to the
+      // chosen destination and ends the move; "Stay" leaves the chip on the
+      // ladder and the remaining dice steps continue normally.
       if (t === T.LADDER) {
         await sleep(400);
-        const choice = await showModal({ type: "ladder", tileNum: next, dest: tiles[next].dest });
+        const lt = tiles[next];
+        const choice = await showModal({
+          type: "ladder", tileNum: next, climbDir: lt.climbDir, dest: lt.dest,
+          bothWay: lt.ladderKind === "both",
+        });
         setModal(null);
-        if (choice === "use") {
-          setTile(tiles[next].dest);
-          // Apply landing logic on the ladder destination (e.g. item pickup).
-          current = await resolveLanding(tiles[next].dest);
+        if (choice === "climb") {
+          setTile(lt.dest);
+          if (lt.ladderKind === "both") {
+            // Landed on the partner ladder tile — traversal complete.
+            current = lt.dest;
+          } else {
+            // Apply landing logic on the ladder destination (e.g. item pickup).
+            current = await resolveLanding(lt.dest);
+          }
           break;
         }
         if (!isLastStep) await sleep(500);
@@ -4842,8 +4930,10 @@ export default function ShaolinGame() {
       {modal?.type === "ladder" && (
         <LadderModal
           tileNum={modal.tileNum}
+          climbDir={modal.climbDir}
           dest={modal.dest}
-          onUse={() => modal.resolve("use")}
+          bothWay={modal.bothWay}
+          onClimb={() => modal.resolve("climb")}
           onStay={() => modal.resolve("stay")}
         />
       )}
