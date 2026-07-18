@@ -10,6 +10,8 @@ A digital board game inspired by a classic Polish tabletop game "Bruce Lee" (198
 
 The game is built as a React/JSX single-page application running in the browser. No backend, no persistent state between sessions. Optional AI narration via various AI/LLM APIs, but gameplay must never depend on it.
 
+A session is bookended by story: an intro screen sets the scene before the first roll, and a closing epilogue keyed to the winner plays after the Ultimate Duel. Both are flavour only and affect no rules.
+
 ---
 
 ## Game Mode
@@ -113,7 +115,7 @@ Every generated board must satisfy all of the following:
 - The Demon Ninja tile (if present) must not appear in the first 20 tiles.
 
 **Item tiles:**
-- At least 2 item tiles must appear in the first half of the board (tiles 1–32).
+- Every row of the board must contain at least one item tile. No player can cross a whole row with nothing to find.
 
 **Ladders:**
 - Exactly 6 ladders: 2 forward-only (toward the duel tile), 2 backward-only (toward tile 1), and 2 two-way (usable in either direction).
@@ -122,8 +124,10 @@ Every generated board must satisfy all of the following:
 - Each ladder's origin tile must be a normal tile
 - Each ladder's destination tile must be a normal tile or an item tile - this is not prohibited.
 - No ladder may land on a fight, trap, hole, or duel tile.
-- No ladder may land to an adjucent tile.
-- There should be no more than 2 ladders in a given row. 
+- No ladder may land on an adjacent tile — a ladder must span at least 2 tiles.
+- There should be no more than 2 ladders in a given row.
+- No two ladder tiles may sit on adjacent positions along the path.
+- Ladder origins are confined to tiles 2–59.
 
 **Holes:**
 - No hole within 5 tiles of the start.
@@ -134,8 +138,9 @@ Every generated board must satisfy all of the following:
 **Traps:**
 - At board generation, 5 trap types are randomly selected from the pool of 7 types: Hold, Sorcery Theft, Pose Theft, Setback, Battle Log Modifier, Pose Lock, and Rival's Tribute.
 - No trap tile within 5 tiles of the start.
-- No trap tile within 2 tiles of a fight tile.
+- No trap tile within 2 tiles of a fight tile or a hole tile.
 - No two trap tiles adjacent to each other.
+- No trap may precede the first item tile on the path. A player always has a chance to find something before anything can be taken from them.
 
 
 **Duel Approach Zone (tiles 60–63):**
@@ -280,6 +285,8 @@ Extra poses are permanent once acquired for that session. They do not carry to t
 
 Both players choose a pose secretly, then reveal simultaneously. The outcome is determined by type and height as follows.
 
+In intermediate fights the opponent is the computer, so the player simply picks. In the Ultimate Duel both sides are human on one shared screen — see Ultimate Duel Turn Order for how secrecy is preserved.
+
 **Strike vs Dodge:**
 
 | | Dodge-High | Dodge-Mid | Dodge-Low |
@@ -307,10 +314,33 @@ Physical logic: a block is a static defence positioned at one level. Same height
 - Block vs Dodge (any heights): both defensive, neither attacking
 
 **Dice roll:**
-Both sides roll one die. Higher roll wins the round. On equal rolls: re-roll until one side wins.
+Both sides roll one die. Higher roll wins the round. On equal rolls: re-roll until one side wins. A player holding the Sword or Nunchaku rolls two dice and keeps the higher; in the Ultimate Duel the Combat Rating modifier is then added to the result.
 
 **Winning a battle:**
 **Intermediate fights:** first to win 2 rounds. **Ultimate Duel:** first to win 3 rounds. No fixed round limit in either case — play continues until one side reaches the target.
+
+### Ultimate Duel Turn Order
+
+The duel is played by two humans sharing one screen, so pose choices are made one at a time with the device passed between them.
+
+**Order of play within a round:**
+1. The first chooser picks their pose. Their choice is committed and hidden.
+2. A "pass the device" screen appears.
+3. The second chooser picks their pose.
+4. Both poses reveal simultaneously and the round resolves.
+
+The handoff screen appears between the two picks of every round. It does not appear before the first pick of round 1 — players hand the device over themselves at the start.
+
+**Who chooses first:** the Shaolin Master, always — regardless of which player reached tile 64 and triggered the duel.
+
+**Oracle's Eye reorders the round.** The Eye reveals the opponent's chosen pose, which only means anything if the opponent has already committed. So in the duel, a player holding Oracle's Eye picks **second**:
+
+- Only the Shaolin Master holds it → **order flips**: the Ninja picks first, the Shaolin Master second.
+- Only the Ninja holds it → order is unchanged; the Ninja already picks second.
+- **Both players hold it** → the two Eyes cancel. Both are spent, neither player sees anything, and the round proceeds with standard order. A modal announces this before the round begins.
+- Neither holds it → standard order.
+
+The reorder is recomputed at the start of every round, so it follows the Eye as it is spent, stolen, or transferred mid-duel.
 
 ### Ninja Types and Computer Behaviour
 
@@ -433,6 +463,17 @@ Spent on use.
 Magic Powder only applies when a battle round requires a dice roll (tied pose matchup situation). The dice roll happens naturally and visibly — both dice are shown. If the natural result favours the player, the round is won normally and the sorcery is not involved. If the natural result is a loss, the game pauses and — if the player holds Magic Powder — asks: "The dice went against you. Use Magic Powder to re-roll?" The player chooses Yes or No. Yes spends the sorcery and both dice are re-rolled. The new result stands — the player can still lose the re-roll. No preserves the sorcery and the original dice loss stands. If the player does not use it in time or chooses not to, the round is lost.
 
 Spent on use.
+
+---
+
+### Sword / Nunchaku
+**Type:** Combat — persistent, always active. No decision to make.
+
+Two persistent weapons with an identical effect. While held, every dice tiebreaker in a battle round rolls two dice for that player and keeps the higher result. This applies automatically in every battle including the Ultimate Duel, and stacks with the Combat Rating modifier.
+
+Each is character-exclusive: only the Ninja can discover the Sword, only the Shaolin Master can discover the Nunchaku. Each is globally unique — at most one of each exists per session.
+
+**Never spent.** Unlike every other item, a weapon is not consumed by use. It can only leave a player's inventory through the Sorcery Theft or Rival's Tribute traps — and via Rival's Tribute it can end up in the hands of the character who could never have found it.
 
 ---
 
