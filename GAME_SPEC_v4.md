@@ -99,6 +99,19 @@ When this trap is validly triggered, the game builds a combined pool of all sorc
 inventory. If an extra pose is transferred, it becomes available to the other player in all future battles (unless lossed later) and is no longer available to the landing player from that 
 point forward (unless acquired again). Both player panels update immediately to reflect the change.
 
+**Translation on transfer.** Character-exclusive items — the two weapons and all six extra poses — never cross to the other character as themselves. Each has an exact counterpart in the other character's set with identical mechanics, and the receiver gets *their own* version instead:
+
+| Shaolin Master | | Ninja | Type / Height |
+|---|---|---|---|
+| Nunchaku | ↔ | Sword | dice tiebreaker: roll two, keep higher |
+| Thunder Dragon | ↔ | Demon Claw | Strike / High |
+| Ghost Walk | ↔ | Void Step | Strike / Mid |
+| Steel Lotus | ↔ | Iron Shroud | Strike / Low |
+
+So a Ninja who loses Demon Claw gives the Shaolin Master **Thunder Dragon** — same Strike, same High, different name and stance. Nothing about the mechanics changes; a fighter simply never performs the other character's technique. Ordinary sorceries have no counterpart and transfer unchanged.
+
+**When the rival already holds it.** An item can only be taken if the rival does not already hold what they would receive — the counterpart for character-exclusive items, the item itself otherwise. Anything failing that test is excluded from the pool, and a different item is selected. If nothing in the landing player's inventory can move, Rival's Tribute is not offered at all and another trap type is chosen (see the eligibility rule above).
+
 The modal announces: "The trap springs against you. Your [item name] passes into your rival's hands." displaying the item name and type clearly. Single Continue button closes 
 the modal and re-enables Roll Dice for the next player's turn.
 
@@ -471,9 +484,9 @@ Spent on use.
 
 Two persistent weapons with an identical effect. While held, every dice tiebreaker in a battle round rolls two dice for that player and keeps the higher result. This applies automatically in every battle including the Ultimate Duel, and stacks with the Combat Rating modifier.
 
-Each is character-exclusive: only the Ninja can discover the Sword, only the Shaolin Master can discover the Nunchaku. Each is globally unique — at most one of each exists per session.
+Each is character-exclusive: only the Ninja can discover the Sword, only the Shaolin Master can discover the Nunchaku. Each is globally unique — at most one of each exists per session — and neither can ever be held by the other character, since Rival's Tribute translates a weapon into the receiver's counterpart.
 
-**Never spent.** Unlike every other item, a weapon is not consumed by use. It can only leave a player's inventory through the Sorcery Theft or Rival's Tribute traps — and via Rival's Tribute it can end up in the hands of the character who could never have found it.
+**Never spent.** Unlike every other item, a weapon is not consumed by use. It can only leave a player's inventory through the Sorcery Theft or Rival's Tribute traps.
 
 ---
 

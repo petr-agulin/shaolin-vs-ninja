@@ -1373,10 +1373,43 @@ const SORCERY_BY_ID = Object.fromEntries(SORCERIES.map((s) => [s.id, s]));
 // Persistent weapons (Sword / Nunchaku) share one identical battle effect:
 // while held, dice tiebreakers roll two dice and keep the higher. Each is
 // globally unique and may only be DISCOVERED by one character — Sword by the
-// Ninja Warrior, Nunchaku by the Shaolin Master — though a trap can still
-// transfer one across to the other player.
+// Ninja Warrior, Nunchaku by the Shaolin Master. Neither can ever end up in
+// the other character's hands: Rival's Tribute translates on transfer (see
+// TRIBUTE_COUNTERPART).
 const WEAPON_ITEM_IDS = ["sword", "nunchaku"];
 const WEAPON_DISCOVERY_CHAR = { sword: "ninja", nunchaku: "shaolin" };
+
+// Character-exclusive items pair up one-to-one across the two characters, with
+// identical mechanics on both sides — the weapons share a dice effect, and each
+// extra pose has a same-type/same-height twin. When Rival's Tribute moves one of
+// these across characters, the receiver gets THEIR OWN version instead of the
+// original: you take what you learned and express it in your own style. This
+// keeps a Shaolin Master from ever performing a ninja technique (there is no art
+// for that pairing — poseImageFor would silently fall back to the other
+// character's sprite) while leaving type, height and dice effect untouched.
+const TRIBUTE_COUNTERPART = {
+  sword:          "nunchaku",
+  nunchaku:       "sword",
+  thunder_dragon: "demon_claw",
+  demon_claw:     "thunder_dragon",
+  ghost_walk:     "void_step",
+  void_step:      "ghost_walk",
+  steel_lotus:    "iron_shroud",
+  iron_shroud:    "steel_lotus",
+};
+
+// Resolves the item a player actually receives when `item` is transferred to
+// them. Items with no counterpart (ordinary sorceries) pass through unchanged.
+function tributeItemFor(item) {
+  const twinId = TRIBUTE_COUNTERPART[item.id];
+  if (!twinId) return item;
+  if (item.kind === "sorcery") {
+    const s = SORCERY_BY_ID[twinId];
+    return { kind: "sorcery", id: s.id, name: s.name, description: s.description };
+  }
+  const p = [...EXTRA_POSES_SHAOLIN, ...EXTRA_POSES_NINJA].find((x) => x.id === twinId);
+  return { kind: "extra_pose", id: p.id, name: p.name, type: p.type, height: p.height };
+}
 
 const NINJA_DESCRIPTIONS = {
   black:  "Disciplined assassin of the Shadow Clan. Defeat sends you back 2 tiles.",
@@ -2269,8 +2302,11 @@ function TrapPoseTheftModal({ poses, onChoose }) {
   );
 }
 
-function TrapTributeModal({ item, onClose }) {
+function TrapTributeModal({ item, given, onClose }) {
   const info = TRAP_INFO.rivals_tribute;
+  // Character-exclusive items arrive in the rival's hands as their own
+  // equivalent, so name it explicitly — otherwise the swap reads as a bug.
+  const translated = given && given.id !== item.id ? given : null;
   const isSorcery = item.kind === "sorcery";
   const itemIcon = isSorcery ? (SORCERY_ICONS[item.id] || "🔮") : "✦";
   const extraImg = !isSorcery ? EXTRA_POSE_IMAGES[item.id] : null;
@@ -2335,9 +2371,15 @@ function TrapTributeModal({ item, onClose }) {
             </div>
           </div>
         </div>
-        <p style={{ fontSize: 14, fontWeight: 600, lineHeight: 1.55, marginBottom: 22, color: "#5a4317" }}>
+        <p style={{ fontSize: 14, fontWeight: 600, lineHeight: 1.55, marginBottom: translated ? 10 : 22, color: "#5a4317" }}>
           It passes into your rival's hands.
         </p>
+        {translated && (
+          <p style={{ fontSize: 13, fontStyle: "italic", lineHeight: 1.55, marginBottom: 22, color: "#6b4f1a" }}>
+            Your rival cannot wield it as you did. In their hands it becomes{" "}
+            <strong style={{ fontStyle: "normal", color: PALETTE.text }}>{translated.name}</strong>.
+          </p>
+        )}
         <button style={BTN_PRIMARY} onClick={onClose}>Continue</button>
       </Draggable>
     </div>
@@ -4059,54 +4101,61 @@ export default function ShaolinGame() {
       const setInv = char === "shaolin" ? setShaolinInventory : setNinjaInventory;
       setInv((prev) => ({ ...prev, sorceries: prev.sorceries.filter((s) => s.id !== id) }));
     }
-    function rivalHoldsWeapon(rival, id) {
-      return WEAPON_ITEM_IDS.includes(id) && invMirror[rival].sorceries.some((s) => s.id === id);
+    function rivalAlreadyHas(rival, item) {
+      // An item can only move if the rival does not already hold what they
+      // would receive — which is the counterpart for character-exclusive items
+      // (weapons, extra poses) and the item itself for everything else.
+      const incoming = tributeItemFor(item);
+      const held = incoming.kind === "sorcery"
+        ? invMirror[rival].sorceries
+        : invMirror[rival].extraPoses;
+      return held.some((x) => x.id === incoming.id);
     }
-    function hasItemsToSteal(char) {
-      // True if the landing player has at least one transferable thing.
-      // Weapons (Sword/Nunchaku) are globally unique — exclude one from the
-      // count when the rival already holds it, so we don't fire Rival's Tribute
-      // when nothing can actually move between inventories.
-      if (invMirror[char].extraPoses.length > 0) return true;
+    function transferablePool(char) {
       const rival = char === "shaolin" ? "ninja" : "shaolin";
-      return invMirror[char].sorceries.some((s) => !rivalHoldsWeapon(rival, s.id));
-    }
-    function pickRandomTributeItem(char) {
       const sorcs = invMirror[char].sorceries.map((s) => ({ kind: "sorcery", ...s }));
       const extras = invMirror[char].extraPoses.map((p) => ({ kind: "extra_pose", ...p }));
-      // Weapons are globally unique — if the rival already holds one, exclude
-      // it from the candidate pool so we pick a different item to transfer.
-      const rival = char === "shaolin" ? "ninja" : "shaolin";
-      const pool = [...sorcs, ...extras].filter(
-        (it) => !(it.kind === "sorcery" && rivalHoldsWeapon(rival, it.id))
-      );
+      return [...sorcs, ...extras].filter((it) => !rivalAlreadyHas(rival, it));
+    }
+    function hasItemsToSteal(char) {
+      // True if the landing player has at least one thing that can actually
+      // move — so Rival's Tribute never fires with nothing to give.
+      return transferablePool(char).length > 0;
+    }
+    function pickRandomTributeItem(char) {
+      const pool = transferablePool(char);
       if (pool.length === 0) return null;
       return pool[Math.floor(Math.random() * pool.length)];
     }
-    function transferItem(fromChar, toChar, item) {
+    // `taken` leaves fromChar; `given` is what toChar receives. They differ for
+    // character-exclusive items, which translate into the receiver's own
+    // version (see TRIBUTE_COUNTERPART).
+    function transferItem(fromChar, toChar, taken) {
+      const given = tributeItemFor(taken);
       // Mutate both local mirrors to keep cascades consistent.
-      if (item.kind === "sorcery") {
-        invMirror[fromChar].sorceries = invMirror[fromChar].sorceries.filter((s) => s.id !== item.id);
-        invMirror[toChar].sorceries.push({ id: item.id, name: item.name, description: item.description });
+      if (taken.kind === "sorcery") {
+        invMirror[fromChar].sorceries = invMirror[fromChar].sorceries.filter((s) => s.id !== taken.id);
+        invMirror[toChar].sorceries.push({ id: given.id, name: given.name, description: given.description });
       } else {
-        invMirror[fromChar].extraPoses = invMirror[fromChar].extraPoses.filter((p) => p.id !== item.id);
-        invMirror[toChar].extraPoses.push({ id: item.id, name: item.name, type: item.type, height: item.height });
+        invMirror[fromChar].extraPoses = invMirror[fromChar].extraPoses.filter((p) => p.id !== taken.id);
+        invMirror[toChar].extraPoses.push({ id: given.id, name: given.name, type: given.type, height: given.height });
       }
       // Mirror those updates into React state.
       const setFrom = fromChar === "shaolin" ? setShaolinInventory : setNinjaInventory;
       const setTo = toChar === "shaolin" ? setShaolinInventory : setNinjaInventory;
       setFrom((prev) => {
-        if (item.kind === "sorcery") {
-          return { ...prev, sorceries: prev.sorceries.filter((s) => s.id !== item.id) };
+        if (taken.kind === "sorcery") {
+          return { ...prev, sorceries: prev.sorceries.filter((s) => s.id !== taken.id) };
         }
-        return { ...prev, extraPoses: prev.extraPoses.filter((p) => p.id !== item.id) };
+        return { ...prev, extraPoses: prev.extraPoses.filter((p) => p.id !== taken.id) };
       });
       setTo((prev) => {
-        if (item.kind === "sorcery") {
-          return { ...prev, sorceries: [...prev.sorceries, { id: item.id, name: item.name, description: item.description }] };
+        if (given.kind === "sorcery") {
+          return { ...prev, sorceries: [...prev.sorceries, { id: given.id, name: given.name, description: given.description }] };
         }
-        return { ...prev, extraPoses: [...prev.extraPoses, { id: item.id, name: item.name, type: item.type, height: item.height }] };
+        return { ...prev, extraPoses: [...prev.extraPoses, { id: given.id, name: given.name, type: given.type, height: given.height }] };
       });
+      return given;
     }
 
     // Resolves the landing event on `tile` (chip is already shown there).
@@ -4324,8 +4373,8 @@ export default function ShaolinGame() {
           const taken = pickRandomTributeItem(character);
           // taken is guaranteed non-null — the eligibility filter only allowed
           // rivals_tribute into the pool when the player has something to give.
-          transferItem(character, other, taken);
-          await showModal({ type: "trap_tribute", item: taken });
+          const given = transferItem(character, other, taken);
+          await showModal({ type: "trap_tribute", item: taken, given });
           setModal(null);
           return tile;
         }
@@ -4348,8 +4397,10 @@ export default function ShaolinGame() {
           if (heldSorceryIds.has(s.id)) return false;
           // Weapons (Sword/Nunchaku) can only be discovered by one character.
           if (WEAPON_DISCOVERY_CHAR[s.id] && WEAPON_DISCOVERY_CHAR[s.id] !== character) return false;
-          // Each weapon is globally unique — if the OTHER player already holds
-          // it (e.g. acquired via theft/tribute), it can't be discovered again.
+          // Each weapon is globally unique. Since Rival's Tribute now translates
+          // a weapon into the receiver's own counterpart, a weapon can no longer
+          // cross characters and this check is belt-and-braces — kept so the
+          // uniqueness guarantee does not depend on that translation.
           if (WEAPON_ITEM_IDS.includes(s.id) && invMirror[otherChar].sorceries.some((x) => x.id === s.id)) return false;
           return true;
         }).map((s) => ({ kind: "sorcery", ...s }));
@@ -5049,6 +5100,7 @@ export default function ShaolinGame() {
       {modal?.type === "trap_tribute" && (
         <TrapTributeModal
           item={modal.item}
+          given={modal.given}
           onClose={() => modal.resolve("ok")}
         />
       )}
