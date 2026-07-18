@@ -12,18 +12,11 @@ The game is built as a React/JSX single-page application running in the browser.
 
 ---
 
-## Game Modes
+## Game Mode
 
-Three modes are selectable at game start:
+One mode: **Versus — Player vs Player.** One player is Shaolin Master, the other is a Ninja. They share the same board and the same screen; turns alternate. Intermediate fight tiles are fought against computer-controlled ninjas; the game ends with an Ultimate Duel between the two players (see Win Conditions).
 
-1. **Team — Play as Shaolin Master**
-   One or two players share the same screen and cooperate as Shaolin Master against computer-controlled ninjas and a final ninja boss.
-
-2. **Team — Play as Ninja**
-   One or two players share the same screen and cooperate as a Ninja against computer-controlled Shaolin Master encounters and a final ultimate fight with Shaolin Master.
-
-3. **Versus — Player vs Player**
-   One player is Shaolin Master, the other is a Ninja. They share the same game board. Turns alternate. The game ends with an Ultimate Duel (see Win Conditions).
+Team/cooperative modes are not implemented.
 
 ---
 
@@ -33,8 +26,7 @@ The board is a winding path of tiles from tile 1 to tile 64. Visually it follows
 
 The board layout is procedurally generated each game. Every generation obeys balancing constraints (see below) so that no game is unplayable or heavily skewed. The path shape itself can vary between games.
 
-The path follows a standard snake pattern: left to right on odd rows, right to left on even rows, starting at tile 1 (top-left) and ending at tile 64 (bottom-left). The boss tile 
-is always visually distinct regardless of its position. 
+The path follows a standard snake pattern: left to right on odd rows, right to left on even rows, starting at tile 1 (top-left) and ending at tile 64 (bottom-left). The duel tile is always visually distinct.
 
 ### Tile Types
 
@@ -43,20 +35,20 @@ is always visually distinct regardless of its position.
 | Normal | Yes — plain tile | Safe. Landing modal opens with a short flavour scene. No game effect. |
 | Fight | Yes — shows enemy type icon (colour-coded per ninja type) | An encounter. Landing modal announces the enemy, then opens the battle screen. |
 | Item | Partial — shows a chest or scroll icon; contents unknown | Landing modal reveals what was found. Player clicks to pick up. |
-| Ladder | Yes — full | Player may choose to use it or ignore it. Ladders always move forward (downward toward the boss), skipping tiles between the ladder and its destination.|
+| Ladder | Yes — full | Player may choose to use it or ignore it. A ladder may run forward (toward the duel tile), backward (toward tile 1), or both ways, skipping the tiles between the ladder and its destination.|
 | Hole | Yes — renders as a visible abyss | Player falls forward 1 or 2 rows. Safety Rope sorcery offers a choice to stay or fall. |
 | Trap | No — looks identical to a normal tile | Hidden event. Revealed only on landing. No advance warning. |
-| Boss | Yes — visually distinct final tile | Triggers the boss fight or Ultimate Duel. Reached by direct landing or overshoot. |
+| Duel | Yes — visually distinct final tile (gold ♔ DUEL) | Triggers the Ultimate Duel between the two players. Reached by direct landing or overshoot. |
 
 ### Tile Distribution (64 tiles total)
 
 - 25 normal tiles
 - 12 fight tiles
 - 12 item tiles (at list one item tile per "board row")
-- 6 ladder tiles (all forward-facing, in the direcrion of the boss)
+- 6 ladder tiles (2 forward, 2 backward, 2 two-way)
 - 5 trap tiles (one per trap type)
 - 3 hole tiles (forward skip 1 row)
-- 1 boss tile (tile 64)
+- 1 duel tile (tile 64)
 
 ### Hole Mechanics
 
@@ -65,11 +57,9 @@ Holes are gaps in the path. You fall through and land further ahead — skipping
 **Visual:** A hole tile does not render as a filled square. It renders as an abyss — dark, empty, irregular. The path visually breaks at this point.
 
 **Fall depth:**
-- 1-row fall: player skips forward one row of the snaking path (approximately 8 tiles ahead).
-- 2-row fall: player skips forward two rows (approximately 16 tiles ahead).
-- Depth is assigned at board generation and fixed for the session.
-- The destination tile is always a normal tile — never a hole, trap, fight, or boss tile.
-- If a fall would land the player on tile 64 or beyond, they land on tile 64 and the boss sequence triggers normally.
+- All holes are 1-row falls: the player skips forward one row of the snaking path (approximately 8 tiles ahead).
+- The destination tile is always a normal tile — never a hole, trap, fight, item, or duel tile.
+- Tile 49 is excluded as a hole origin, since its fall would land on tile 64.
 
 **Resolution:**
 - If the player does not hold a Safety Rope sorcery: the chip falls automatically to the destination tile. The destination tile's landing modal then opens normally.
@@ -77,7 +67,7 @@ Holes are gaps in the path. You fall through and land further ahead — skipping
 
 ### Trap Types
 
-Traps are hidden tile events with negative effects. A trap tile looks identical to a normal tile until landed on. When triggered, a modal announces the trap and resolves the effect before the turn ends. Six trap types are defined. Each game, 4 are randomly selected at board generation and assigned to the 4 trap tiles — each selected type appears exactly once. No sorcery can be used to avoid a trap in advance.
+Traps are hidden tile events with negative effects. A trap tile looks identical to a normal tile until landed on. When triggered, a modal announces the trap and resolves the effect before the turn ends. Seven trap types are defined. Each game, 5 are randomly selected at board generation and assigned to the 5 trap tiles — each selected type appears exactly once. No sorcery can be used to avoid a trap in advance.
 
 **Hold**
 The player loses their next turn. A visible indicator appears on their panel as a reminder. At the start of what would be their next turn, the hold resolves automatically and play passes on. If both players are simultaneously held, both skip a turn and the hold clears.
@@ -103,14 +93,14 @@ Note: when Combat Rating is implemented, it must be calculated dynamically from 
 **Rival's Tribute**
 When a player lands on a trap tile, the game selects a trap type randomly from a valid pool. Rival's Tribute is only included in the pool if the landing player currently holds at least one sorcery or at least one acquired extra pose. If the landing player holds neither, Rival's Tribute is excluded from the pool entirely for this landing and another trap type is selected instead.This guarantees the trap tile always produces a meaningful effect and Rival's Tribute is never triggered when there is nothing to take.
 
-When this trap is validly triggered, the game builds a combined pool of all sorceries and all acquired extra poses currently held by the other player. The system automatically selects one item at random from this pool — neither player makes a choice. The selected item is immediately removed from the landing player's inventory and added to the other player's 
+When this trap is validly triggered, the game builds a combined pool of all sorceries and all acquired extra poses currently held by **the landing player**. The system automatically selects one item at random from this pool — neither player makes a choice. The selected item is immediately removed from the landing player's inventory and added to the other player's 
 inventory. If an extra pose is transferred, it becomes available to the other player in all future battles (unless lossed later) and is no longer available to the landing player from that 
 point forward (unless acquired again). Both player panels update immediately to reflect the change.
 
 The modal announces: "The trap springs against you. Your [item name] passes into your rival's hands." displaying the item name and type clearly. Single Continue button closes 
 the modal and re-enables Roll Dice for the next player's turn.
 
-This trap is distinct from Sorcery Theft (which removes a sorcery from the landing player themselves) and Pose Theft (which removes an extra pose from the landing player themselves). Rival's Tribute always takes from the opponent and gives to the landing player.
+This trap is distinct from Sorcery Theft and Pose Theft, which remove the item from the game entirely. Rival's Tribute transfers it to the opponent instead.
 
 ### Balancing Constraints for Generation
 
@@ -126,37 +116,36 @@ Every generated board must satisfy all of the following:
 - At least 2 item tiles must appear in the first half of the board (tiles 1–32).
 
 **Ladders:**
-- All ladders move the player forward (downward toward the boss).
+- Exactly 6 ladders: 2 forward-only (toward the duel tile), 2 backward-only (toward tile 1), and 2 two-way (usable in either direction).
 - At least 1 ladder in the first half (tiles 1–32) and at least 1 in the second half (tiles 33–63).
+- Tile 1 may never be a ladder.
 - Each ladder's origin tile must be a normal tile
 - Each ladder's destination tile must be a normal tile or an item tile - this is not prohibited.
-- No ladder may land on a fight, trap, hole, or boss tile.
+- No ladder may land on a fight, trap, hole, or duel tile.
 - No ladder may land to an adjucent tile.
 - There should be no more than 2 ladders in a given row. 
 
 **Holes:**
 - No hole within 5 tiles of the start.
-- No two holes within 3 tiles of each other.
+- No two holes on adjacent tiles.
 - No hole within 2 tiles of a trap tile.
 - At least one item tile or normal tile must exist between a hole's origin and its destination (so the skip always costs something).
 
 **Traps:**
-- At board generation, 4 trap types are randomly selected from the pool of up to 7 types: Hold, Sorcery Theft, Pose Theft, Setback, Battle Log Modifier, Pose Lock, and Rival's Tribute.
+- At board generation, 5 trap types are randomly selected from the pool of 7 types: Hold, Sorcery Theft, Pose Theft, Setback, Battle Log Modifier, Pose Lock, and Rival's Tribute.
 - No trap tile within 5 tiles of the start.
 - No trap tile within 2 tiles of a fight tile.
 - No two trap tiles adjacent to each other.
 
 
-**Boss Approach Zone (tiles 60–63):**
-- Tiles 60–63 must all be normal tiles — no fights, no traps, no ladders, no holes. Once a player enters this zone, the path to the boss is clear.
+**Duel Approach Zone (tiles 60–63):**
+- Tiles 60–63 must all be normal tiles — no fights, no traps, no ladders, no holes. Once a player enters this zone, the path to the duel tile is clear.
 
-### Reaching the Boss
+### Reaching the Duel
 
-**Boss tile (64):** Any roll that would move a player to tile 64 or beyond lands them on tile 64 exactly. The excess is discarded.
+**Duel tile (64):** Any roll that would move a player to tile 64 or beyond lands them on tile 64 exactly. The excess is discarded. This applies to both players independently.
 
-**Team mode:** The player reaches tile 64 when any roll lands them there or past it. The boss fight begins immediately upon landing.
-
-**Versus mode:** The same overshoot rule applies to both players independently. The first player to land on tile 64 triggers the Ultimate Duel immediately — the second player does not need to reach tile 64 for the duel to happen. If the first player loses the duel, they are sent back to tile 40, and the second player now has their own chance to reach tile 64 and trigger a new duel.
+The first player to land on tile 64 triggers the Ultimate Duel immediately — the second player does not need to reach tile 64. The duel decides the game outright.
 
 ---
 
@@ -213,11 +202,9 @@ Every tile landing triggers a modal. Modals must be dismissed by the player befo
 - Battle screen then opens (see Combat System). This is a separate layer from the modal.
 - After battle: brief result modal showing outcome and updated Combat Rating before returning to the board.
 
-### Boss Tile Modal
+### Duel Tile Modal
 
-- Opens with a cinematic frame: the Master Ninja (or Shaolin Master, if playing as Ninja team) stands at the path's end.
-- **Team Mode:** Displays the current Combat Rating and remaining boss attempts alongside the cinematic frame. "The Master Ninja awaits. This is the final test." Boss fight begins immediately.
-- **Versus Mode:** "The path ends here. The final fight begins." The Ultimate Duel triggers immediately between the two players (Shaolin Master vs Ninja), not against the Master Ninja. Full rules in Win Conditions.
+Opens with a cinematic frame showing the two fighters at the path's end: "The path ends here. The ultimate duel begins." A single button starts the Ultimate Duel between the two players (Shaolin Master vs Ninja). Full rules in Win Conditions.
 
 ---
 
@@ -323,11 +310,11 @@ Physical logic: a block is a static defence positioned at one level. Same height
 Both sides roll one die. Higher roll wins the round. On equal rolls: re-roll until one side wins.
 
 **Winning a battle:**
-First to win 2 rounds wins the battle. No fixed round limit — play continues until one side reaches 2 wins.
+**Intermediate fights:** first to win 2 rounds. **Ultimate Duel:** first to win 3 rounds. No fixed round limit in either case — play continues until one side reaches the target.
 
 ### Ninja Types and Computer Behaviour
 
-In team mode, the computer controls all enemy encounters. The computer picks a pose type based on weighted probability per ninja type, then selects a random height within that type.
+The computer controls all intermediate fight-tile encounters. It picks a pose type based on weighted probability per ninja type, then selects a random height within that type.
 
 | Ninja Type | Strike % | Block % | Dodge % | Special behaviour |
 |---|---|---|---|---|
@@ -335,7 +322,6 @@ In team mode, the computer controls all enemy encounters. The computer picks a p
 | Fire Ninja | 60 | 20 | 20 | Relentless. Punishes hesitation. |
 | Shadow Ninja | 20 | 20 | 60 | Evasive. Hard to anticipate. |
 | Demon Ninja | 34 | 33 | 33 | 15% chance to use one of the three extra ninja poses (Demon Claw, Void Step, or Iron Shroud) instead of a base pose — introducing a Strike at an unexpected height. |
-| Master Ninja | 34 | 33 | 33 | Uses the full pose set including all three extra ninja poses. Boss only. |
 
 **Ninja setbacks on player loss (intermediate fights):**
 | Ninja Type | Tiles set back | Combat Rating effect |
@@ -350,29 +336,27 @@ In team mode, the computer controls all enemy encounters. The computer picks a p
 - Fire Ninja: orange-red
 - Shadow Ninja: blue-violet
 - Demon Ninja: purple
-- Master Ninja: gold
 
 ---
 
-## Combat Rating (Team Mode Only)
+## Combat Rating
 
-The Combat Rating tracks the team's fighting performance across all intermediate fights throughout the session. It starts at 0, persists across all three boss attempts, and directly affects the dice rolls during the boss fight.
+Each player has a Combat Rating tracking their performance across intermediate fights. It starts at 0 and is **derived dynamically from the battle log** (total wins minus total defeats), never tracked as a running counter. It applies as a dice modifier during the Ultimate Duel only — it has no effect on intermediate fights.
 
 ### How It Changes
 
 - **Win an intermediate fight:** +1
 - **Lose an intermediate fight:** −1
-- **Skip a fight (Ancient Key):** no change — skipping is neutral
-- **Unexpected Fight trap:** applies normally (+1 win, −1 loss)
-- **Boss fight itself:** does not affect the Combat Rating
+- **Skip a fight (Mantle of Mist):** no change — skipping is neutral
+- **The Ultimate Duel itself:** does not affect the Combat Rating
 
 The rating has no floor or ceiling — it can go negative if losses outweigh wins.
 
-### Effect on the Boss Fight
+### Effect on the Ultimate Duel
 
-The Combat Rating applies as a dice modifier to all dice-roll situations during the boss fight (see Battle Resolution for when dice are used):
+The Combat Rating applies as a dice modifier to all dice-roll situations during the Ultimate Duel (see Battle Resolution for when dice are used):
 
-| Combat Rating | Dice modifier vs boss |
+| Combat Rating | Dice modifier in the duel |
 |---|---|
 | +3 or higher | +2 to your die roll |
 | +1 or +2 | +1 to your die roll |
@@ -380,21 +364,17 @@ The Combat Rating applies as a dice modifier to all dice-roll situations during 
 | −1 or −2 | −1 to your die roll |
 | −3 or lower | −2 to your die roll |
 
-A +2 modifier against the boss is a meaningful edge in any dice situation. A −2 modifier makes the boss fight significantly harder.
-
-### The Comeback Loop
-
-When the team loses a boss attempt and is sent back to tile 40, they retain their current Combat Rating. If that rating is low or negative, they now have 20+ tiles to travel before reaching the boss again — more fight encounters, more opportunities to push the rating upward before the next attempt. A poor first attempt is not a dead end; it is a second chance to earn strength.
+A +2 modifier in the duel is a meaningful edge in any dice situation. A −2 modifier makes the duel significantly harder. Because the rating is derived from the battle log, the Battle Log Modifier trap automatically reflects in it with no separate adjustment.
 
 ### Display
 
-The Combat Rating is always visible on the player panel. It updates immediately after each fight result is shown. On the boss tile modal, the current rating and its dice modifier are displayed clearly before the fight begins so the team knows what they are bringing into the final confrontation.
+Each player's Combat Rating is always visible on their player panel. It updates immediately after each fight result is shown.
 
 ---
 
 ## Sorceries
 
-Sorceries are single-use special items found on item tiles. They are a separate category from poses. All sorceries are spent (permanently removed from the player's inventory) the moment they are used, regardless of outcome. Multiple sorceries can be held simultaneously.
+Sorceries and items are found on item tiles. They are a separate category from poses. Most are single-use and are spent (permanently removed from the player's inventory) the moment they are used, regardless of outcome. Two — the Sword and the Nunchaku — are **persistent weapons**: they are never spent, and can only be lost to the Sorcery Theft or Rival's Tribute traps. Multiple may be held simultaneously.
 
 Finding a sorcery is luck-based. Sorceries are distributed across item tiles randomly individually per each player, from the pool of available sorceries. Players cannot acquire them on demand. Sorceries expire at the end of the session.
 
@@ -403,7 +383,7 @@ Finding a sorcery is luck-based. Sorceries are distributed across item tiles ran
 ### Mantle of Mist
 **Type:** Board — triggered by the game, player decides to use or not.
 
-When a player lands on a fight tile, before the fight modal opens, the game checks if the player holds this sorcery. If yes, the game asks: "You hold the Mantle of Mist. Slip past unseen?" The player chooses Yes or No. The player must see which enemy type they met. Yes spends the sorcery and skips the fight entirely — no battle occurs, no Combat Rating change, turn ends normally. No preserves the sorcery and the fight proceeds (fight modal opens). Cannot be used on the boss tile (tile 64).
+When a player lands on a fight tile, before the fight modal opens, the game checks if the player holds this sorcery. If yes, the game asks: "You hold the Mantle of Mist. Slip past unseen?" The player chooses Yes or No. The player must see which enemy type they met. Yes spends the sorcery and skips the fight entirely — no battle occurs, no Combat Rating change, turn ends normally. No preserves the sorcery and the fight proceeds (fight modal opens). Cannot be used on the duel tile (tile 64).
 
 Spent on use.
 
@@ -412,7 +392,7 @@ Spent on use.
 ### Magic Compass
 **Type:** Board — player initiates before rolling.
 
-A "Use Sorcery" button is available at the start of the player's turn, before rolling the dice. When clicked, it opens a small window to pick from available sorceries of the type that can be used before making the move. Selecting Magic Compass from available options opens some controls where the player defines two things: direction (forward toward the boss, or backward toward tile 1) and exact distance (1, 2, or 3 tiles). The chip moves to that exact destination instead of rolling. The destination tile's event resolves normally. The player cannot choose a destination beyond tile 64 in the forward direction or below tile 1 in the backward direction.
+A "Use Sorcery" button is available at the start of the player's turn, before rolling the dice. When clicked, it opens a small window to pick from available sorceries of the type that can be used before making the move. Selecting Magic Compass from available options opens some controls where the player defines two things: direction (forward toward the duel tile, or backward toward tile 1) and exact distance (1, 2, or 3 tiles). The chip moves to that exact destination instead of rolling. The destination tile's event resolves normally. The player cannot choose a destination beyond tile 64 in the forward direction or below tile 1 in the backward direction.
 
 Spent on use.
 
@@ -421,9 +401,9 @@ Spent on use.
 ### Ancient Key
 **Type:** Board — player initiates before rolling.
 
-Works similarly to a ladder: the player jumps one full row up (backward) or down (forward) from their current position. Unlike ladders, this is not tied to a ladder tile — the player creates their own shortcut. However, it can only be used when the player is currently standing on a normal (regular) tile. It cannot be used from fight, item, trap, hole, ladder, or boss tiles.
+Works similarly to a ladder: the player jumps one full row up (backward) or down (forward) from their current position. Unlike ladders, this is not tied to a ladder tile — the player creates their own shortcut, and it can be used from any tile.
 
-The "Use Sorcery" button is available at the start of the player's turn, before rolling the dice. This is when Ancient Key must be activated — before the roll, from the player's current standing position. The player must be currently standing on a normal tile to use it — if standing on any other tile type, Ancient Key is greyed out and unavailable. The player selects direction (one row up or one row down). The chip jumps to the corresponding tile on the adjacent row, and that tile's event resolves normally.
+The "Use Sorcery" button is available at the start of the player's turn, before rolling the dice. This is when Ancient Key must be activated — before the roll, from the player's current standing position. The player selects direction (one row up or one row down). The chip jumps to the corresponding tile on the adjacent row, and that tile's event resolves normally.
 
 Spent on use.
 
@@ -474,38 +454,22 @@ Spent on use.
 
 ### Sorcery Balance Principles
 
-- All sorceries are spent on use and cannot be recovered except by finding them again on item tiles (subject to the exclusion rule for already-held sorceries).
+- Single-use sorceries are spent on use and cannot be recovered except by finding them again on item tiles (subject to the exclusion rule for already-held sorceries). The persistent weapons are never spent.
 - Sorceries range from highly situational (Safety Rope — only applicable on 3 hole tiles) to broadly applicable (Oracle's Eye — useful in any battle round). This is intentional. Not every find is equally powerful, and players cannot choose what they find.
 - No sorcery guarantees a final victory. Individual rounds or board events can be influenced, but the overall game outcome remains uncertain.
-- All sorceries are drawn from the same pool with equal probability, excluding sorceries the player already holds. There is no rarity weighting — luck determines what you find.
+- All sorceries are drawn from the same pool with equal probability, excluding sorceries the player already holds and excluding the two character-exclusive weapons, which only their own character can discover. There is no rarity weighting — luck determines what you find.
 
 ---
 
 ## Win Conditions
 
-### Team Mode
-
-Goal: reach tile 64 and defeat the Master Ninja (or Shaolin Master, if playing as Ninja) within 3 attempts.
-
-**Boss attempt limit:** The team has exactly 3 attempts to defeat the boss. The remaining attempt count is displayed at all times once the first attempt has been made. If the team loses all 3 attempts, the game ends in defeat.
-
-**On a boss loss:** the team is sent back to tile 40. All items, extra poses, and sorceries are retained. The Combat Rating is retained and carries into the next attempt. The team resumes play from tile 40.
-
-**On a boss win:** victory. Game ends immediately.
-
-The Combat Rating accumulated across intermediate fights applies as a dice modifier during every boss attempt (see Combat Rating). A team that fought well throughout the board enters the boss fight stronger. A team that avoided or lost fights will find the boss harder — but being sent back to tile 40 gives them more path to recover their rating before the next attempt.
-
-### Versus Mode
-
 Goal: be the first to reach tile 64 and win the Ultimate Duel.
 
 - The first player to reach tile 64 triggers the Ultimate Duel immediately — no waiting for the second player.
-- The Ultimate Duel is a battle between the two players (Shaolin Master vs Ninja) — not against the Master Ninja.
+- The duel is between the two players (Shaolin Master vs Ninja), best of 3 round wins.
 - Standard battle rules apply. All items, sorceries, and extra poses collected during the board phase carry into the duel.
-- If the first player loses the duel: they are sent back to tile 40. The second player now has a chance to reach tile 64 and trigger a new duel.
-- This can repeat, reflecting the "multiple fights throughout the film, one final decisive clash" structure of kung fu cinema.
-
-Note: Combat Rating is a team mode mechanic only. It does not apply in versus mode.
+- Each player's Combat Rating applies as a dice modifier throughout the duel (see Combat Rating).
+- The duel winner wins the game. There is no rematch and no send-back — the game ends immediately with the closing story.
 
 ---
 
@@ -513,11 +477,10 @@ Note: Combat Rating is a team mode mechanic only. It does not apply in versus mo
 
 There is no explicit rank or level system. What changes during a game:
 
-- **Combat Rating** (team mode): rises with fight wins, falls with losses. Carries through all boss attempts. Directly affects boss fight dice rolls.
+- **Combat Rating**: rises with fight wins, falls with losses. Directly affects Ultimate Duel dice rolls.
 - **Extra poses acquired**: up to 3. Luck-based. Cannot be deliberately farmed. Can be lost via Pose Theft trap.
 - **Sorceries held**: any combination, found by luck. Can be lost via Sorcery Theft trap.
 - **Board position**: naturally progresses but can be affected by holes (forward skip), lost battles (tile setback), and the Hold trap (lost turn).
-- **Boss attempts remaining** (team mode): starts at 3, decrements on each boss loss. Displayed visibly at all times once the first attempt is made.
 
 The intent: two players always start equal. What separates them by the end is how the board treated them and how they fought — neither fully in their control.
 
@@ -533,9 +496,9 @@ Each entry contains:
 - Enemy type (e.g. Fire Ninja)
 - Outcome (Victory / Defeat)
 - Tile number where the encounter occurred
-- Combat Rating change (+1 / −1, team mode only)
+- Combat Rating change (+1 / −1)
 
-A summary line at the top shows total wins and losses for each player, and the current Combat Rating (team mode only). The log is session-only and resets with a new game.
+A summary line at the top shows total wins and losses for each player, and the current Combat Rating. The log is session-only and resets with a new game.
 
 ---
 
@@ -550,11 +513,13 @@ A summary line at the top shows total wins and losses for each player, and the c
 - Enemy pose is shown face-down until reveal. Both poses displayed side by side after reveal.
 - Fight tiles display a small enemy-type icon visible before landing (colour-coded per ninja type). Item tiles display a neutral chest or scroll icon — contents are not shown. Trap tiles have no special marking and are visually indistinguishable from normal tiles.
 - Hole tiles render as an abyss — dark, irregular, visually breaking the path outline.
-- The player panel displays: board position, extra poses held, sorceries held, Combat Rating (team mode), boss attempts remaining (team mode).
+- The player panel displays: board position, extra poses held, sorceries held, Combat Rating.
 
 ---
 
-## AI Narration (Optional)
+## AI Narration (Planned — Not Yet Implemented)
+
+*Status: no part of this section is implemented. There is no API key input, no settings panel, and no network calls in the current build. The design below is retained as the intended target.*
 
 - Configured via an API key entered in the settings panel on the title screen.
 - If no key is provided, or if an API call fails: fall back to a pool of pre-written flavour lines. Gameplay is never blocked.
@@ -571,7 +536,7 @@ A summary line at the top shows total wins and losses for each player, and the c
 - No external libraries required beyond React.
 - No backend. No persistent storage. Stateless between sessions.
 - Board state, player state, and battle state are all held in React `useState`.
-- The AI API is called client-side using `fetch`. The API key is stored only in component state (not localStorage).
+- *(Planned)* The AI API is called client-side using `fetch`. The API key is stored only in component state (not localStorage).
 - All randomness uses `Math.random()`. No seeded RNG required.
 
 ---
