@@ -1275,6 +1275,28 @@ const EXTRA_POSE_ID_SET = new Set([
   ...EXTRA_POSES_NINJA.map((p) => p.id),
 ]);
 
+// Secret techniques (extra poses) win a round exactly as often as an ordinary
+// strike of the same height — resolveCombat never looks at them. What they
+// change is the CONSEQUENCE of the round. Each character's three techniques
+// pair up with the other character's by height, and a pair shares one rider:
+//   ghost   — board: the next fight starts 1-0 for whoever won this round.
+//             duel:  1 round, plus +1 on the round winner's next dice round.
+//   thunder — board: a win logs two victories; a loss destroys the technique.
+//             duel:  2 rounds on a win; on a loss 1 round to the opponent and
+//                    the technique is destroyed.
+//   lotus   — board: a win logs two victories, a loss logs two defeats.
+//             duel:  2 rounds either way.
+const TECHNIQUE_KIND = {
+  ghost_walk: "ghost",     void_step:  "ghost",
+  thunder_dragon: "thunder", demon_claw: "thunder",
+  steel_lotus: "lotus",    iron_shroud: "lotus",
+};
+
+function techniqueKind(pose) {
+  if (!pose || !pose.id) return null;
+  return TECHNIQUE_KIND[pose.id] || null;
+}
+
 // Paired backgrounds for extra poses (Shaolin + Ninja share a colour at each
 // height). Lighter tones of regal hues that still set them apart from base cards.
 const EXTRA_POSE_BG_BY_HEIGHT = {
@@ -1841,7 +1863,7 @@ function BattleLogPanel({ shaolinLog, ninjaLog }) {
 function PlayerPanel({
   character, label,
   sorceries, extraPoses,
-  held = false, lockedType = null,
+  held = false, lockedType = null, headStart = null,
   tile = null,
   isMyTurn = false,
   canRoll = false,
@@ -1852,7 +1874,7 @@ function PlayerPanel({
   forcedRoll = null,
   onForcedRollChange = () => {},
 }) {
-  const hasCurse = held || lockedType != null;
+  const hasCurse = held || lockedType != null || headStart != null;
   const accent = character === "shaolin" ? "#22c55e" : "#ff5252";
   return (
     <div style={{
@@ -1927,6 +1949,24 @@ function PlayerPanel({
                   </div>
                   <div style={{ fontSize: 11, color: "#c4ad7b", fontStyle: "italic", lineHeight: 1.4 }}>
                     Your {lockedType} stances slumber in iron — they will not wake until the next battle ends.
+                  </div>
+                </div>
+              </div>
+            )}
+            {headStart && (
+              <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+                <span style={{ fontSize: 18, lineHeight: 1.2 }}>{headStart === "self" ? "🌿" : "🌫"}</span>
+                <div>
+                  <div style={{
+                    fontSize: 12, fontWeight: 700, letterSpacing: 0.4,
+                    color: headStart === "self" ? "#8ee6a8" : "#e8a0a0",
+                  }}>
+                    {headStart === "self" ? "Ghost Walk echo" : "Ghost Walk shadow"}
+                  </div>
+                  <div style={{ fontSize: 11, color: "#c4ad7b", fontStyle: "italic", lineHeight: 1.4 }}>
+                    {headStart === "self"
+                      ? "Your next fight begins 1–0 in your favour."
+                      : "Your next fight begins 1–0 against you."}
                   </div>
                 </div>
               </div>
@@ -2666,11 +2706,27 @@ function ItemModal({ variant, item, onClose }) {
             {item.type} / {item.height}
           </div>
         )}
-        <p style={{ fontSize: 13, lineHeight: 1.6, marginBottom: 22, color: "#5a4317", fontStyle: "italic" }}>
+        <p style={{ fontSize: 13, lineHeight: 1.6, marginBottom: isSorcery ? 22 : 12, color: "#5a4317", fontStyle: "italic" }}>
           {isSorcery
             ? item.description
-            : "A secret technique scroll. This move has been added to your arsenal."}
+            : "A secret technique scroll. It wins a round no more often than an ordinary strike of the same height — but it changes what that round is worth."}
         </p>
+        {!isSorcery && techniqueKind(item) && (
+          <div style={{
+            textAlign: "left",
+            background: "rgba(138,22,32,0.07)",
+            border: "1px solid rgba(138,22,32,0.35)",
+            borderRadius: 8, padding: "10px 12px", marginBottom: 22,
+            fontSize: 12, lineHeight: 1.55, color: "#5a4317",
+          }}>
+            <div style={{ marginBottom: 6 }}>
+              <strong>In a fight:</strong> {TECHNIQUE_DISCOVERY[techniqueKind(item)].board}
+            </div>
+            <div>
+              <strong>In the final duel:</strong> {TECHNIQUE_DISCOVERY[techniqueKind(item)].duel}
+            </div>
+          </div>
+        )}
         <button style={BTN_PRIMARY} onClick={onClose}>Pick Up</button>
       </Draggable>
     </div>
@@ -2861,7 +2917,41 @@ function FinalDuelIntroModal({ onBegin }) {
 //   p1_choose → handoff_p2 → p2_choose → reveal (with optional dice subphase)
 //   → either round_result → next round (handoff_p1 → p1_choose...) or → battle_end
 
-function PoseCard({ pose, character, selected, onSelect, locked = false, flip = false }) {
+// Fuller description shown once, on the item-found modal, when a technique is
+// discovered. Both contexts are spelled out because the two behave differently.
+const TECHNIQUE_DISCOVERY = {
+  ghost: {
+    board: "sudden death — whoever wins the round takes the whole fight. Your next fight then starts 1–0, in your favour if you won and against you if you lost.",
+    duel:  "worth one round, and whoever wins it gains +1 on their next dice roll.",
+  },
+  thunder: {
+    board: "sudden death — whoever wins the round takes the whole fight. A win is recorded as two victories; a loss destroys the technique (it returns to the pool and can be found again).",
+    duel:  "a win takes two rounds. A loss gives your rival one round and destroys the technique.",
+  },
+  lotus: {
+    board: "sudden death — whoever wins the round takes the whole fight. A win is recorded as two victories, a loss as two defeats, so your Combat Rating swings twice as far.",
+    duel:  "two rounds to whoever wins it — the biggest swing available.",
+  },
+};
+
+// Shown on a secret technique's pose card so the gamble is legible BEFORE the
+// player commits. Wording mirrors the spec's two tables.
+const TECHNIQUE_CARD_NOTE = {
+  ghost: {
+    board: "SUDDEN DEATH · winner of this round takes the fight. Next fight starts 1–0 either way.",
+    duel:  "1 round either way, +1 dice to whoever wins it.",
+  },
+  thunder: {
+    board: "SUDDEN DEATH · winner of this round takes the fight. Win = +2 rating. Lose = destroyed.",
+    duel:  "Win = 2 rounds. Lose = 1 round to them, and destroyed.",
+  },
+  lotus: {
+    board: "SUDDEN DEATH · winner of this round takes the fight. Rating swings +2 / −2.",
+    duel:  "2 rounds either way.",
+  },
+};
+
+function PoseCard({ pose, character, selected, onSelect, locked = false, flip = false, isFinal = false }) {
   const img = poseImageFor(character, pose);
   const isExtra = EXTRA_POSE_ID_SET.has(pose.id);
   const imgTransform = [flip ? "scaleX(-1)" : "", isExtra ? "scale(1.2)" : ""]
@@ -2955,6 +3045,17 @@ function PoseCard({ pose, character, selected, onSelect, locked = false, flip = 
         <div style={{ fontSize: 12 }}>
           <strong>{pose.type}</strong> / {pose.height}
         </div>
+        {techniqueKind(pose) && (
+          <div style={{
+            marginTop: 5,
+            fontSize: 10, lineHeight: 1.3, fontWeight: 600,
+            color: "#8a1620",
+            borderTop: "1px solid rgba(138,22,32,0.3)",
+            paddingTop: 4,
+          }}>
+            {TECHNIQUE_CARD_NOTE[techniqueKind(pose)][isFinal ? "duel" : "board"]}
+          </div>
+        )}
       </div>
     </button>
   );
@@ -3002,6 +3103,8 @@ function BattleScreen({
   p1LockedType = null, p2LockedType = null,
   p1Sorceries = [], p2Sorceries = [],
   onSpendSorcery = () => {},
+  onDestroyTechnique = () => {},
+  headStart = null,           // "p1" | "p2" — board fights only (Ghost Walk)
   isFinal = false,
   p1CombatRating = 0, p2CombatRating = 0,
   onResolved,
@@ -3021,11 +3124,23 @@ function BattleScreen({
   // a per-kind folder keyed "{kind}-ninja" (black-ninja, shadow-ninja, …), which
   // also keeps it distinct from the player hero ninja ("ninja").
   const p2Character = isSolo ? `${ninjaType}-ninja` : otherCharacter;
-  const p1Poses = (p1Character === "shaolin" ? BASE_POSES_SHAOLIN : BASE_POSES_NINJA).concat(p1Extras);
+  // A Thunder Dragon destroyed mid-duel must vanish from the pose list for the
+  // remaining rounds. p1Extras/p2Extras are a snapshot taken when the battle
+  // opened, so the parent's inventory update alone would not remove it here.
+  const [destroyedIds, setDestroyedIds] = useState({ p1: [], p2: [] });
+  function destroyTechnique(player, poseId) {
+    setDestroyedIds((prev) => ({ ...prev, [player]: [...prev[player], poseId] }));
+    onDestroyTechnique(player, poseId);
+  }
+  const p1Poses = (p1Character === "shaolin" ? BASE_POSES_SHAOLIN : BASE_POSES_NINJA)
+    .concat(p1Extras)
+    .filter((p) => !destroyedIds.p1.includes(p.id));
   // CPU enemies in solo mode use only the base pose set for now.
   const p2Poses = isSolo
     ? BASE_POSES_NINJA
-    : (p2Character === "shaolin" ? BASE_POSES_SHAOLIN : BASE_POSES_NINJA).concat(p2Extras);
+    : (p2Character === "shaolin" ? BASE_POSES_SHAOLIN : BASE_POSES_NINJA)
+        .concat(p2Extras)
+        .filter((p) => !destroyedIds.p2.includes(p.id));
 
   // First chooser of the round and current device holder. Both default to p1
   // (the active player who triggered the battle). In the final duel, Oracle's
@@ -3049,7 +3164,16 @@ function BattleScreen({
     return "p1_choose";
   });
   const [round, setRound] = useState(1);
-  const [scores, setScores] = useState({ p1: 0, p2: 0 });
+  // A Ghost Walk result in the previous board fight starts this one at 1-0.
+  const [scores, setScores] = useState(() => ({
+    p1: headStart === "p1" ? 1 : 0,
+    p2: headStart === "p2" ? 1 : 0,
+  }));
+  // Pending Ghost Walk dice bonus (+1), duel only. Awarded to the winner of a
+  // Ghost Walk round and spent on that player's next dice-decided round.
+  const [diceBonus, setDiceBonus] = useState({ p1: 0, p2: 0 });
+  // Extra result detail handed to the parent when a board fight ends.
+  const [techniqueResult, setTechniqueResult] = useState(null);
   const [p1Choice, setP1Choice] = useState(null);
   const [p2Choice, setP2Choice] = useState(null);
   const [selecting, setSelecting] = useState(null); // current tentative pick
@@ -3211,13 +3335,16 @@ function BattleScreen({
     } else {
       p2 = Math.floor(Math.random() * 6) + 1;
     }
+    // A pending Ghost Walk bonus adds on top of the Combat Rating modifier and
+    // applies to every roll of this round, re-rolls included.
     return {
       p1, p2,
-      p1Final: p1 + p1Mod,
-      p2Final: p2 + p2Mod,
+      p1Final: p1 + p1Mod + diceBonus.p1,
+      p2Final: p2 + p2Mod + diceBonus.p2,
       p1Extra, p2Extra,
       p1Weapon, p2Weapon,
-      p1Mod, p2Mod,
+      p1Mod: p1Mod + diceBonus.p1,
+      p2Mod: p2Mod + diceBonus.p2,
     };
   }
 
@@ -3300,10 +3427,80 @@ function BattleScreen({
     setIronBellDeclined(false);
     beginRoundAfterReset();
   }
+  // Duel resolution when one or both sides played a secret technique. There is
+  // no cancellation: each technique resolves its OWN owner's rider, and the
+  // round is worth the larger of the awards in play. Single source of truth for
+  // both the score change and the explanatory text.
+  function duelResolution(winner) {
+    const p1Tech = techniqueKind(p1Choice);
+    const p2Tech = isSolo ? null : techniqueKind(p2Choice);
+    let award = 1;
+    let bonusTo = null;
+    const destroy = [];
+    for (const owner of ["p1", "p2"]) {
+      const kind = owner === "p1" ? p1Tech : p2Tech;
+      if (!kind) continue;
+      const choice = owner === "p1" ? p1Choice : p2Choice;
+      const ownerWon = winner === owner;
+      if (kind === "ghost") {
+        bonusTo = winner;                       // always to the round's winner
+      } else if (kind === "thunder") {
+        if (ownerWon) award = Math.max(award, 2);
+        else destroy.push({ owner, id: choice.id });
+      } else {
+        award = Math.max(award, 2);             // lotus: 2 rounds either way
+      }
+    }
+    return { award, bonusTo, destroy, p1Tech, p2Tech };
+  }
+
   function nextRound() {
     const winner = finalWinner;
-    const newScores = { ...scores, [winner]: scores[winner] + 1 };
+    // A CPU ninja's extra poses are pure flourish — only a human player's
+    // secret technique carries a rider.
+    const p1Tech = techniqueKind(p1Choice);
+    const p2Tech = isSolo ? null : techniqueKind(p2Choice);
+
+    // ---- Board fight: a secret technique is sudden death ----------------
+    if (!isFinal && p1Tech) {
+      const won = winner === "p1";
+      let logEntries = 1;
+      let nextHeadStart = null;
+      if (p1Tech === "thunder") {
+        if (won) logEntries = 2;
+        else destroyTechnique("p1", p1Choice.id);
+      } else if (p1Tech === "lotus") {
+        logEntries = 2;
+      } else if (p1Tech === "ghost") {
+        nextHeadStart = won ? "self" : "opponent";
+      }
+      setTechniqueResult({ kind: p1Tech, won, logEntries, headStart: nextHeadStart });
+      setScores(won ? { ...scores, p1: winsToWin } : { ...scores, p2: winsToWin });
+      setPhase("battle_end");
+      return;
+    }
+
+    // ---- Round award -----------------------------------------------------
+    // Duel only: a technique changes how many rounds the round is worth. Two
+    // techniques in the same round cancel — ordinary round, nothing destroyed,
+    // no dice bonus.
+    let award = 1;
+    let bonusTo = null;
+    if (isFinal && (p1Tech || p2Tech)) {
+      const res = duelResolution(winner);
+      award = res.award;
+      bonusTo = res.bonusTo;
+      for (const d of res.destroy) destroyTechnique(d.owner, d.id);
+    }
+
+    const newScores = { ...scores, [winner]: scores[winner] + award };
     setScores(newScores);
+    // A pending bonus is spent by any round that actually went to dice.
+    setDiceBonus((prev) => {
+      const spent = dice ? { p1: 0, p2: 0 } : prev;
+      // Refreshed, never stacked.
+      return bonusTo ? { ...spent, [bonusTo]: 1 } : spent;
+    });
     if (newScores.p1 >= winsToWin || newScores.p2 >= winsToWin) {
       setPhase("battle_end");
     } else {
@@ -3337,10 +3534,45 @@ function BattleScreen({
       }
     }
   }
+  // One line describing what the secret technique just did, shown after the
+  // round resolves. `winner` is the round winner.
+  function techniqueNote(winner) {
+    const p1Tech = techniqueKind(p1Choice);
+    const p2Tech = isSolo ? null : techniqueKind(p2Choice);
+    if (!p1Tech && !p2Tech) return null;
+    const labelOf = (pl) => (pl === "p1" ? p1Label : p2Label);
+    const winnerLabel = labelOf(winner);
+
+    // Board fights: only the player's own technique matters, and it is sudden death.
+    if (!isFinal) {
+      const won = winner === "p1";
+      const tail = p1Tech === "thunder"
+        ? (won ? " Recorded as two victories." : " The technique is destroyed.")
+        : p1Tech === "lotus"
+          ? (won ? " Recorded as two victories." : " Recorded as two defeats.")
+          : (won ? " The next fight starts 1–0 in their favour." : " The next fight starts 1–0 against them.");
+      return `Sudden death — ${winnerLabel} takes the whole fight.${tail}`;
+    }
+
+    // Duel: describe every consequence in play, since both sides may have one.
+    const { award, bonusTo, destroy } = duelResolution(winner);
+    const parts = [`${winnerLabel} takes ${award} round${award > 1 ? "s" : ""}.`];
+    if (bonusTo) parts.push(`${labelOf(bonusTo)} gains +1 on their next dice roll.`);
+    for (const d of destroy) parts.push(`${labelOf(d.owner)}'s technique is destroyed.`);
+    return parts.join(" ");
+  }
+
   function finishBattle() {
     const battleWinner = scores.p1 >= winsToWin ? "p1" : "p2";
     if (isSolo) {
-      onResolved(battleWinner === "p1" ? "won" : "lost");
+      // Board fights report the rider detail alongside the outcome: how many
+      // battle-log entries to record, and any head start for the next fight.
+      onResolved({
+        outcome: battleWinner === "p1" ? "won" : "lost",
+        logEntries: techniqueResult ? techniqueResult.logEntries : 1,
+        headStart: techniqueResult ? techniqueResult.headStart : null,
+        technique: techniqueResult ? techniqueResult.kind : null,
+      });
     } else {
       onResolved(battleWinner);
     }
@@ -3525,6 +3757,7 @@ function BattleScreen({
                       character={cardCharacter}
                       selected={selecting?.id === pose.id}
                       locked={isLocked}
+                      isFinal={isFinal}
                       onSelect={() => {
                         if (isLocked) return;
                         setSelecting(pose);
@@ -3556,6 +3789,7 @@ function BattleScreen({
                         character={cardCharacter}
                         selected={selecting?.id === pose.id}
                         locked={false}
+                        isFinal={isFinal}
                         onSelect={() => setSelecting(pose)}
                       />
                     ))}
@@ -3677,12 +3911,12 @@ function BattleScreen({
             }}>
               <div style={sideStyle}>
                 <div style={{ fontSize: 13, color: leftColor, fontWeight: 700, marginBottom: 6 }}>{leftLabel}</div>
-                <PoseCard pose={leftChoice} character={leftChar} selected={false} onSelect={() => {}} />
+                <PoseCard pose={leftChoice} character={leftChar} selected={false} onSelect={() => {}} isFinal={isFinal} />
               </div>
               <div style={{ fontSize: 20, color: "#7a5500", fontWeight: 700, alignSelf: "center" }}>vs</div>
               <div style={sideStyle}>
                 <div style={{ fontSize: 13, color: rightColor, fontWeight: 700, marginBottom: 6 }}>{rightLabel}</div>
-                <PoseCard pose={rightChoice} character={rightChar} selected={false} onSelect={() => {}} flip={rightFlip} />
+                <PoseCard pose={rightChoice} character={rightChar} selected={false} onSelect={() => {}} flip={rightFlip} isFinal={isFinal} />
               </div>
             </div>
           );
@@ -3724,6 +3958,15 @@ function BattleScreen({
             </div>
           )}
         </div>
+        {finalWinner && techniqueNote(finalWinner) && (
+          <div style={{
+            background: "#2a1206", border: "1px solid #8a1620",
+            borderRadius: 8, padding: "10px 12px", fontSize: 13,
+            color: "#f5d9a8", marginBottom: 14, fontWeight: 600,
+          }}>
+            ✦ {techniqueNote(finalWinner)}
+          </div>
+        )}
         {needsDice ? (
           <button style={BTN_PRIMARY} onClick={rollDice}>Roll the dice</button>
         ) : magicPowderPending ? (
@@ -3917,6 +4160,10 @@ export default function ShaolinGame() {
   const [ninjaHeld, setNinjaHeld] = useState(false);
   const [shaolinLockedType, setShaolinLockedType] = useState(null); // "Strike" | "Block" | "Dodge" | null
   const [ninjaLockedType, setNinjaLockedType] = useState(null);
+  // Ghost Walk carries a 1-0 head start (for or against) into the player's next
+  // board fight. "self" | "opponent" | null. Consumed by that fight.
+  const [shaolinHeadStart, setShaolinHeadStart] = useState(null);
+  const [ninjaHeadStart, setNinjaHeadStart] = useState(null);
   // Each player draws traps from their OWN shuffled deck of 4 (out of 6)
   // and tracks which trap tiles they have personally triggered.
   // Per-player set of trap TYPES already encountered. Each type fires at most
@@ -3978,6 +4225,8 @@ export default function ShaolinGame() {
     setNinjaHeld(false);
     setShaolinLockedType(null);
     setNinjaLockedType(null);
+    setShaolinHeadStart(null);
+    setNinjaHeadStart(null);
     setShaolinUsedTrapTypes(new Set());
     setNinjaUsedTrapTypes(new Set());
     setShaolinTrappedTiles(new Set());
@@ -4462,7 +4711,11 @@ export default function ShaolinGame() {
         setModal(null);
         const playerInv = character === "shaolin" ? shaolinInventory : ninjaInventory;
         const playerLock = character === "shaolin" ? shaolinLockedType : ninjaLockedType;
-        const outcome = await showModal({
+        const pendingHeadStart = character === "shaolin" ? shaolinHeadStart : ninjaHeadStart;
+        const setHeadStart = character === "shaolin" ? setShaolinHeadStart : setNinjaHeadStart;
+        // A head start from a previous Ghost Walk is consumed by this fight.
+        setHeadStart(null);
+        const result = await showModal({
           type: "battle",
           mode: "solo",
           ninjaType,
@@ -4470,13 +4723,23 @@ export default function ShaolinGame() {
           otherCharacter: character === "shaolin" ? "ninja" : "shaolin",
           p1Extras: playerInv.extraPoses,
           p1LockedType: playerLock,
+          headStart: pendingHeadStart === "self" ? "p1"
+                   : pendingHeadStart === "opponent" ? "p2" : null,
         });
         setModal(null);
+        const outcome = result.outcome;
+        // Ghost Walk sets up the NEXT fight.
+        if (result.headStart) setHeadStart(result.headStart);
         // The pose lock applies only to the player's next battle — clear it.
         const setLock = character === "shaolin" ? setShaolinLockedType : setNinjaLockedType;
         setLock(null);
         const setLog = character === "shaolin" ? setShaolinBattleLog : setNinjaBattleLog;
-        setLog((prev) => [...prev, { ninjaType, outcome }]);
+        // Thunder Dragon and Steel Lotus record the fight twice, so the Combat
+        // Rating (derived from the log) moves by 2 instead of 1.
+        setLog((prev) => [
+          ...prev,
+          ...Array.from({ length: result.logEntries }, () => ({ ninjaType, outcome })),
+        ]);
         if (outcome === "lost") {
           const setback = NINJA_SETBACK[ninjaType];
           const target = Math.max(1, tile - setback);
@@ -4873,6 +5136,7 @@ export default function ShaolinGame() {
                 extraPoses={shaolinInventory.extraPoses}
                 held={shaolinHeld}
                 lockedType={shaolinLockedType}
+                headStart={shaolinHeadStart}
                 tile={shaolinTile}
                 isMyTurn={currentTurn === "shaolin"}
                 canRoll={canRollFor("shaolin")}
@@ -4890,6 +5154,7 @@ export default function ShaolinGame() {
                 extraPoses={ninjaInventory.extraPoses}
                 held={ninjaHeld}
                 lockedType={ninjaLockedType}
+                headStart={ninjaHeadStart}
                 tile={ninjaTile}
                 isMyTurn={currentTurn === "ninja"}
                 canRoll={canRollFor("ninja")}
@@ -5022,6 +5287,14 @@ export default function ShaolinGame() {
             const setInv = char === "shaolin" ? setShaolinInventory : setNinjaInventory;
             setInv((prev) => ({ ...prev, sorceries: prev.sorceries.filter((s) => s.id !== id) }));
           }}
+          onDestroyTechnique={(player, poseId) => {
+            // Thunder Dragon burns out when it loses — gone for the session.
+            const char = player === "p1" ? modal.activeCharacter : modal.otherCharacter;
+            if (!char) return;
+            const setInv = char === "shaolin" ? setShaolinInventory : setNinjaInventory;
+            setInv((prev) => ({ ...prev, extraPoses: prev.extraPoses.filter((p) => p.id !== poseId) }));
+          }}
+          headStart={modal.headStart || null}
           isFinal={!!modal.isFinal}
           p1CombatRating={
             modal.activeCharacter === "shaolin"

@@ -269,31 +269,6 @@ All players start with the full base set of 9 poses. No poses are locked or gate
 
 The visual stances differ between Shaolin Master and Ninja, but types and heights are symmetrical. Players may develop favourite poses over time.
 
-### Extra Poses (Secret Techniques)
-
-Up to 3 extra poses are hidden in the game, found via item tiles by luck. Each extra pose is a Strike with an assigned height. They are visually distinct and unfamiliar — opponents won't know the height until revealed, which is their strategic value.
-
-**Shaolin Master extras:**
-| Pose | Type | Height |
-|---|---|---|
-| Thunder Dragon | Strike | High |
-| Ghost Walk | Strike | Mid |
-| Steel Lotus | Strike | Low |
-
-**Ninja extras:**
-| Pose | Type | Height |
-|---|---|---|
-| Demon Claw | Strike | High |
-| Void Step | Strike | Mid |
-| Iron Shroud | Strike | Low |
-
-Probability of finding each:
-- 1st extra pose: likely but not guaranteed during a normal playthrough
-- 2nd extra pose: harder, requires luck
-- 3rd extra pose: rare
-
-Extra poses are permanent once acquired for that session. They do not carry to the next game. They can be lost via the Pose Theft trap.
-
 ### Battle Resolution
 
 Both players choose a pose secretly, then reveal simultaneously. The outcome is determined by type and height as follows.
@@ -379,6 +354,58 @@ The computer controls all intermediate fight-tile encounters. It picks a pose ty
 - Fire Ninja: orange-red
 - Shadow Ninja: blue-violet
 - Demon Ninja: purple
+
+---
+
+## Secret Techniques (Extra Poses)
+
+Three secret techniques are hidden in the game and found by luck on item tiles — each can be found at most once at a time. Every character has their own set of three, and all of them are Strikes:
+
+| Shaolin Master | Ninja | Height |
+|---|---|---|
+| Ghost Walk | Void Step | Mid |
+| Thunder Dragon | Demon Claw | High |
+| Steel Lotus | Iron Shroud | Low |
+
+A secret technique is selected during pose selection like any other pose, and **its chance of winning a round is identical to an ordinary strike of the same height** — what differs is the consequence of the round. A technique can be lost to the Pose Theft and Rival's Tribute traps, and Thunder Dragon is also lost when it fails (see below). A lost technique returns to the pool: it can be found again on a later item tile, or received via Rival's Tribute. Nothing carries between games.
+
+### In a fight on the board
+
+Playing a secret technique triggers **sudden death**: whoever wins that round wins the whole fight, whatever the score was. A technique can therefore be used at most once per fight.
+
+| Technique | If you win the round | If you lose the round | Use it when | Never use it when | At an equal score (0–0 or 1–1) |
+|---|---|---|---|---|---|
+| **Ghost Walk** / Void Step | Fight won. Battle log records **one victory** (+1 rating). Your next fight starts **1–0 in your favour**. | Fight lost. Battle log records **one defeat** (−1 rating). Your next fight starts **0–1 against you**. | You are behind **0–1**, with fight tiles still ahead. | You are ahead **1–0**. | An even bet — only the next-fight head start is at stake. At **1–1**, your last chance to use it this fight. |
+| **Thunder Dragon** / Demon Claw | Fight won. Battle log records **two victories** (+2 rating). | Fight lost. Battle log records **one defeat** (−1 rating), and the technique is **destroyed** — it returns to the pool and can be found again. | You are behind **0–1**. | You are ahead **1–0**. | Risks the technique for one extra rating point; usually better kept for **0–1**. Last chance at **1–1**. |
+| **Steel Lotus** / Iron Shroud | Fight won. Battle log records **two victories** (+2 rating). | Fight lost. Battle log records **two defeats** (−2 rating). | You are behind **0–1**; best of all when your Combat Rating is **−3 or lower**. | You are ahead **1–0**, or your Combat Rating is **+3 or higher**. | An even bet with a doubled rating swing — your rating decides. Last chance at **1–1**. |
+
+### In the Ultimate Duel
+
+The duel is won by the first player to take 3 rounds. There is no sudden death, and a technique may be played every round for as long as you hold it — the only limit is that Thunder Dragon is destroyed the moment it loses a round. The duel is not recorded in the battle log, and each player's Combat Rating dice bonus is fixed when the duel begins.
+
+| Technique | If you win the round | If you lose the round | Use it when | Never use it when | At an equal score (0–0, 1–1 or 2–2) |
+|---|---|---|---|---|---|
+| **Ghost Walk** / Void Step | **1 round** to you, and **+1 on your next dice-decided round**. | **1 round** to your opponent, and **+1 to them on their next dice-decided round**. | You are **behind**. | You are **ahead**. | Only the dice bonus is at stake, going to whoever wins the round. At **2–2** it does nothing. |
+| **Thunder Dragon** / Demon Claw | **2 rounds** to you. | **1 round** to your opponent, and the technique is **destroyed**. | You are **behind** — and before Steel Lotus, since a loss concedes only 1 round. | You are **ahead**. | Gains 2 rounds but concedes only 1, while risking the technique. An ordinary pose at **2–2**. |
+| **Steel Lotus** / Iron Shroud | **2 rounds** to you. | **2 rounds** to your opponent. | You are **behind 0–2 or 1–2** — the largest swing available. | You are **ahead**. | 2 rounds either way. An ordinary pose at **2–2**. |
+
+**The dice bonus from Ghost Walk**
+
+- It waits for the next round actually decided by dice, however many rounds away, and applies to re-rolls too.
+- It is added on top of the Combat Rating modifier and works alongside the Sword or Nunchaku.
+- It does not stack: winning again with Ghost Walk refreshes it rather than increasing it. Each player carries their own, so two pending bonuses landing on the same dice round cancel out.
+
+**When both players play a technique in the same duel round**
+
+Neither is cancelled. Each technique resolves its own owner's consequence, and the round is worth the larger of the two awards. A Ghost Walk played into a Demon Claw still grants the round winner their dice bonus and still destroys the Demon Claw if its owner lost.
+
+**Head start**
+
+Ghost Walk's 1–0 head start applies to your next board fight, is shown on your player panel beforehand, and does not stack. It has no effect in the duel.
+
+**Rival's Tribute**
+
+A technique taken by Rival's Tribute becomes the receiving character's matching version: Ghost Walk ↔ Void Step, Thunder Dragon ↔ Demon Claw, Steel Lotus ↔ Iron Shroud.
 
 ---
 
