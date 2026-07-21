@@ -1297,6 +1297,50 @@ function techniqueKind(pose) {
   return TECHNIQUE_KIND[pose.id] || null;
 }
 
+// Per-item-find drop rate for each secret technique, ascending in difficulty.
+// These are the literal chance that a single item find yields that pose. Rates
+// are independent: a roll that lands on an unavailable (already-held) pose
+// falls through to a sorcery, so each pose's chance is exactly its own value
+// regardless of what else is held.
+const TECHNIQUE_DROP_ORDER = ["ghost", "thunder", "lotus"];
+const TECHNIQUE_DROP_RATE = {
+  ghost:   0.10,   // Ghost Walk / Void Step  — easiest
+  thunder: 0.06,   // Thunder Dragon / Demon Claw
+  lotus:   0.04,   // Steel Lotus / Iron Shroud — hardest
+};
+
+// Decides what one item find yields. Rolls once for a secret technique in
+// difficulty order (independent per-pose rates); anything else yields a random
+// available sorcery. Never returns an empty find unless the player already
+// holds every item. `rng` is injectable for tests.
+function pickItemFind(availableExtras, availableSorceries, rng = Math.random) {
+  const r = rng();
+  let threshold = 0;
+  let landedKind = null;
+  for (const kind of TECHNIQUE_DROP_ORDER) {
+    const rate = TECHNIQUE_DROP_RATE[kind];
+    if (r >= threshold && r < threshold + rate) { landedKind = kind; break; }
+    threshold += rate;
+  }
+  // The roll hit an extra band AND that pose is still available → take it.
+  if (landedKind) {
+    const pose = availableExtras.find((p) => TECHNIQUE_KIND[p.id] === landedKind);
+    if (pose) return pose;
+  }
+  // Otherwise a sorcery. (Either the roll fell in the sorcery zone, or it hit
+  // a band whose pose is already held — that mass goes to sorceries, keeping
+  // each pose's rate independent.)
+  if (availableSorceries.length > 0) {
+    return availableSorceries[Math.floor(rng() * availableSorceries.length)];
+  }
+  // No sorceries left — never waste the tile: give the best available extra.
+  for (const kind of TECHNIQUE_DROP_ORDER) {
+    const pose = availableExtras.find((p) => TECHNIQUE_KIND[p.id] === kind);
+    if (pose) return pose;
+  }
+  return null; // Player holds absolutely everything (degenerate).
+}
+
 // Paired backgrounds for extra poses (Shaolin + Ninja share a colour at each
 // height). Lighter tones of regal hues that still set them apart from base cards.
 const EXTRA_POSE_BG_BY_HEIGHT = {
@@ -4657,15 +4701,16 @@ export default function ShaolinGame() {
         const heldExtraIds = new Set(inv.extraPoses.map((p) => p.id));
         const availableExtras = extras.filter((p) => !heldExtraIds.has(p.id))
           .map((p) => ({ kind: "extra_pose", ...p }));
-        const pool = [...availableSorceries, ...availableExtras];
 
-        if (pool.length === 0) {
+        // Weighted find: secret techniques are rarer than sorceries and differ
+        // by difficulty (see TECHNIQUE_DROP_RATE). Tiles never come up empty
+        // unless the player already holds every item.
+        const picked = pickItemFind(availableExtras, availableSorceries);
+        if (!picked) {
           await showModal({ type: "item", variant: "none" });
           setModal(null);
           return tile;
         }
-
-        const picked = pool[Math.floor(Math.random() * pool.length)];
         await showModal({ type: "item", variant: "found", item: picked });
         setModal(null);
 

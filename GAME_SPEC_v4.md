@@ -359,7 +359,7 @@ The computer controls all intermediate fight-tile encounters. It picks a pose ty
 
 ## Secret Techniques (Extra Poses)
 
-Three secret techniques are hidden in the game and found by luck on item tiles — each can be found at most once at a time. Every character has their own set of three, and all of them are Strikes:
+Three secret techniques are hidden in the game and found by luck on item tiles. They are rarer than sorceries and differ in how often they turn up: on each item find, Ghost Walk / Void Step drops **10%** of the time, Thunder Dragon / Demon Claw **6%**, and Steel Lotus / Iron Shroud **4%** — anything else is a sorcery. Every character has their own set of three, and all of them are Strikes:
 
 | Shaolin Master | Ninja | Height |
 |---|---|---|
