@@ -3150,18 +3150,71 @@ function FlashOverlay({ flash }) {
   useEffect(() => {
     const el = ref.current;
     if (!flash || !el) return;
-    // A "big" flash fills the screen (duel decided); otherwise a vignette that
-    // stays clear in the centre so result text remains readable.
-    el.style.background = flash.big
+    // A "fill" flash covers the screen; otherwise a vignette that stays clear in
+    // the centre so result text remains readable.
+    el.style.background = flash.fill
       ? flash.color
       : `radial-gradient(circle at center, transparent 45%, ${flash.color} 100%)`;
     const anim = el.animate(
-      [{ opacity: flash.big ? 0.9 : 1 }, { opacity: 0 }],
-      { duration: flash.big ? 550 : 380, easing: "ease-out" }
+      [{ opacity: flash.peak != null ? flash.peak : 1 }, { opacity: 0 }],
+      { duration: flash.dur || 400, easing: "ease-out" }
     );
     return () => anim.cancel();
   }, [flash ? flash.n : 0]);
   return <div ref={ref} style={{ position: "fixed", inset: 0, pointerEvents: "none", opacity: 0, zIndex: 2600 }} />;
+}
+
+// Celebratory burst for the duel's deciding moment — Asian-style pieces
+// (blossoms, lanterns, gold) erupt from the centre and drift down. Purely
+// cosmetic; pointer-events none; clears itself after the animation.
+function ConfettiBurst({ burst }) {
+  const ref = useRef(null);
+  const [pieces, setPieces] = useState([]);
+
+  useEffect(() => {
+    if (!burst) return;
+    const glyphs = ["🌸", "🏮", "🌸", "✨", "🪙", "🌸", "❁", "🎋", "🌸", "🧧"];
+    const W = typeof window !== "undefined" ? window.innerWidth : 1000;
+    const H = typeof window !== "undefined" ? window.innerHeight : 700;
+    setPieces(Array.from({ length: 32 }, (_, i) => ({
+      glyph: glyphs[i % glyphs.length],
+      dx: (Math.random() * 2 - 1) * W * 0.45,
+      dy: H * (0.35 + Math.random() * 0.55),
+      up: 50 + Math.random() * 150,
+      rot: (Math.random() * 2 - 1) * 600,
+      dur: 1600 + Math.random() * 1000,
+      delay: Math.random() * 220,
+      size: 18 + Math.random() * 22,
+    })));
+  }, [burst ? burst.n : 0]);
+
+  useEffect(() => {
+    if (!pieces.length || !ref.current) return;
+    const kids = ref.current.children;
+    pieces.forEach((p, i) => {
+      const el = kids[i];
+      if (!el) return;
+      el.animate(
+        [
+          { transform: "translate(0px,0px) scale(0.4) rotate(0deg)", opacity: 0 },
+          { opacity: 1, offset: 0.12, transform: `translate(${p.dx * 0.35}px, ${-p.up}px) scale(1) rotate(${p.rot * 0.2}deg)` },
+          { transform: `translate(${p.dx}px, ${p.dy}px) scale(1) rotate(${p.rot}deg)`, opacity: 0 },
+        ],
+        { duration: p.dur, delay: p.delay, easing: "cubic-bezier(.16,.7,.4,1)", fill: "forwards" }
+      );
+    });
+    const t = setTimeout(() => setPieces([]), 2900);
+    return () => clearTimeout(t);
+  }, [pieces]);
+
+  if (!pieces.length) return null;
+  return (
+    <div ref={ref} style={{ position: "fixed", inset: 0, pointerEvents: "none", zIndex: 2700, overflow: "hidden" }}>
+      {pieces.map((p, i) => (
+        <div key={i} style={{ position: "absolute", left: "50%", top: "42%", fontSize: p.size, opacity: 0, willChange: "transform, opacity" }}>{p.glyph}</div>
+      ))}
+    </div>
+  );
 }
 
 // ---- FightReferenceModal ---------------------------------------------------
@@ -3379,26 +3432,30 @@ function BattleScreen({
   // Combat juice (cosmetic). A shake wrapper around the battle content and a
   // flash overlay; both fire on key beats and touch no game state.
   const shakeRef = useRef(null);
-  const [flash, setFlash] = useState(null); // { color, big, n } | null
-  const flashN = useRef(0);
+  const [flash, setFlash] = useState(null); // { color, fill, peak, dur, n } | null
+  const [burst, setBurst] = useState(null); // { n } | null — confetti trigger
+  const juiceN = useRef(0);
   const reduceMotion = typeof window !== "undefined" && window.matchMedia
     && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  function triggerFlash(color, big = false) {
-    flashN.current += 1;
-    setFlash({ color, big, n: flashN.current });
+  function triggerFlash(color, opts = {}) {
+    juiceN.current += 1;
+    setFlash({ color, fill: !!opts.fill, peak: opts.peak, dur: opts.dur || 400, n: juiceN.current });
   }
-  function doShake(px) {
+  function triggerBurst() {
+    juiceN.current += 1;
+    setBurst({ n: juiceN.current });
+  }
+  // Decaying random shake over `dur` ms. Skipped under reduced motion.
+  function doShake(px, dur = 450) {
     if (reduceMotion || !shakeRef.current) return;
-    shakeRef.current.animate(
-      [
-        { transform: "translate(0px,0px)" },
-        { transform: `translate(${px}px,${-px * 0.6}px)` },
-        { transform: `translate(${-px}px,${px * 0.6}px)` },
-        { transform: `translate(${px * 0.6}px,0px)` },
-        { transform: "translate(0px,0px)" },
-      ],
-      { duration: 300, easing: "ease-in-out" }
-    );
+    const steps = Math.max(5, Math.round(dur / 70));
+    const frames = [{ transform: "translate(0px,0px)" }];
+    for (let i = 1; i < steps; i++) {
+      const a = px * (1 - i / steps); // amplitude decays toward the end
+      frames.push({ transform: `translate(${(Math.random() * 2 - 1) * a}px, ${(Math.random() * 2 - 1) * a * 0.7}px)` });
+    }
+    frames.push({ transform: "translate(0px,0px)" });
+    shakeRef.current.animate(frames, { duration: dur, easing: "ease-in-out" });
   }
   const [phase, setPhase] = useState(() => {
     if (!isFinal || isSolo) return "p1_choose";
@@ -3449,18 +3506,23 @@ function BattleScreen({
     if (phase !== "reveal" || !finalWinner) return;
     const techniquePlayed = !!techniqueKind(p1Choice) || (!isSolo && !!techniqueKind(p2Choice));
     if (techniquePlayed) {
-      triggerFlash("rgba(212,175,55,0.85)");
-      doShake(7);
+      triggerFlash("rgba(212,175,55,0.85)", { dur: 570 });
+      doShake(7, 450);
     } else if (outcome && /Strike wins/.test(outcome.reason)) {
-      triggerFlash("rgba(200,60,30,0.7)");
-      doShake(9);
+      triggerFlash("rgba(200,60,30,0.7)", { dur: 570 });
+      doShake(9, 450);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, finalWinner]);
 
-  // Combat juice: the duel's deciding moment gets a bright celebratory flash.
+  // Combat juice: the duel's deciding moment — a sustained shake, an Asian-style
+  // confetti burst, and a soft lingering gold glow (no quick white flash).
   useEffect(() => {
-    if (phase === "battle_end" && isFinal) triggerFlash("rgba(255,238,180,0.9)", true);
+    if (phase === "battle_end" && isFinal) {
+      doShake(8, 1000);                       // no-ops under reduced motion
+      if (!reduceMotion) triggerBurst();      // skip the flying confetti too
+      triggerFlash("rgba(212,175,55,0.55)", { peak: 0.7, dur: 1300 });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase]);
 
@@ -4429,6 +4491,7 @@ function BattleScreen({
         />
       )}
       <FlashOverlay flash={flash} />
+      <ConfettiBurst burst={burst} />
     </div>
   );
 }
