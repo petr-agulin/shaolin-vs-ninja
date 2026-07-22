@@ -3500,15 +3500,28 @@ function BattleScreen({
   // Iron Bell — the round resolved as a loss; offer ring/decline until decided.
   const [ironBellDeclined, setIronBellDeclined] = useState(false);
 
-  // Combat juice: on a resolved round, a technique burst (gold) or a strike
-  // impact (red) with a shake. Dice-decided ordinary rounds stay calm.
+  // Combat juice: fire once per round, only when the result is COMMITTED — i.e.
+  // after any Magic Powder / Iron Bell decision, never on a result that a replay
+  // could rewind. A technique burst (gold), or a strike impact when the winner's
+  // pose is a Strike (this includes dice-decided rounds such as two kicks).
+  const juiceFiredRef = useRef(false);
   useEffect(() => {
-    if (phase !== "reveal" || !finalWinner) return;
+    if (!finalWinner) { juiceFiredRef.current = false; return; } // new round → reset
+    if (phase !== "reveal") return;
+    if (magicPowderPending) return;                              // wait for the re-roll choice
+    const loser = finalWinner === "p1" ? "p2" : "p1";
+    if (playerHas(loser, "iron_bell") && !ironBellDeclined) return; // wait for the bell choice
+    if (juiceFiredRef.current) return;                          // once per committed result
+    juiceFiredRef.current = true;
+
     const techniquePlayed = !!techniqueKind(p1Choice) || (!isSolo && !!techniqueKind(p2Choice));
     if (techniquePlayed) {
       triggerFlash("rgba(212,175,55,0.85)", { dur: 570 });
       doShake(7, 450);
-    } else if (outcome && /Strike wins/.test(outcome.reason)) {
+      return;
+    }
+    const winnerPose = finalWinner === "p1" ? p1Choice : p2Choice;
+    if (winnerPose && winnerPose.type === "Strike") {
       // White when a player lands the strike (both sides are players in the
       // duel); red when the computer enemy lands it in a board fight.
       const playerStruck = isFinal || finalWinner === "p1";
@@ -3516,7 +3529,7 @@ function BattleScreen({
       doShake(9, 450);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase, finalWinner]);
+  }, [phase, finalWinner, magicPowderPending, ironBellDeclined]);
 
   // Combat juice: the duel's deciding moment — a sustained shake, an Asian-style
   // confetti burst, and a soft lingering gold glow (no quick white flash).
