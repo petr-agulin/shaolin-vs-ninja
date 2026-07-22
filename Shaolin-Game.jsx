@@ -3142,12 +3142,14 @@ function ScorePips({
 }
 
 // ---- FightReferenceModal ---------------------------------------------------
-// A read-only "how fights work" overlay: the base pose matchups plus what each
-// of the viewing player's secret techniques does, on the board and in the duel.
-// Matchup cells are derived by calling the real resolveCombat, so they can never
-// drift from the actual rules; technique text reuses TECHNIQUE_DISCOVERY.
+// A compact, read-only "how fights work" overlay: the base pose matchups plus
+// what each of the viewing player's secret techniques does, on the board and in
+// the duel. Matchup cells are derived by calling the real resolveCombat so they
+// can never drift; technique text reuses TECHNIQUE_CARD_NOTE.
 const REFERENCE_HEIGHTS = ["High", "Mid", "Low"];
-const REF_WIN_COLOR = { Strike: "#c0491f", Block: "#3a5fb0", Dodge: "#2f8f56", Dice: "#7a6f57" };
+const REF_WIN_COLOR = { Strike: "#c0491f", Block: "#3a5fb0", Dodge: "#2f8f56", Dice: "#8a7a55" };
+// Shared prefix on every board card-note; shown once, stripped per technique.
+const SUDDEN_DEATH_PREFIX = "SUDDEN DEATH · winner of this round takes the fight. ";
 
 function matchupWinner(strikeHeight, defenderType, defenderHeight) {
   const res = resolveCombat(
@@ -3162,19 +3164,18 @@ function matchupWinner(strikeHeight, defenderType, defenderHeight) {
 function MatchupGrid({ defenderType }) {
   const cell = (key, txt) => (
     <td key={key} style={{
-      padding: "6px 4px", textAlign: "center", fontSize: 12, fontWeight: 700,
-      color: "#fff", background: REF_WIN_COLOR[txt], border: "1px solid #fff8e7",
-      borderRadius: 4, minWidth: 46,
+      padding: "4px 3px", textAlign: "center", fontSize: 11.5, fontWeight: 700,
+      color: "#fff", background: REF_WIN_COLOR[txt], borderRadius: 3, minWidth: 40,
     }}>{txt}</td>
   );
   const head = (key, txt, dim) => (
-    <th key={key} style={{ padding: "4px 6px", fontSize: dim ? 10 : 11, color: dim ? "#8a7a55" : "#5a4317", fontWeight: 700 }}>{txt}</th>
+    <th key={key} style={{ padding: "2px 5px", fontSize: dim ? 9.5 : 11, color: dim ? "#8a7a55" : "#5a4317", fontWeight: 700 }}>{txt}</th>
   );
   return (
-    <table style={{ borderCollapse: "separate", borderSpacing: 3, margin: "0 auto" }}>
+    <table style={{ borderCollapse: "separate", borderSpacing: 2, margin: "0 auto" }}>
       <thead>
         <tr>
-          {head("corner", `Strike↓ / ${defenderType}→`, true)}
+          {head("corner", `S↓ / ${defenderType[0]}→`, true)}
           {REFERENCE_HEIGHTS.map((h) => head(`h-${h}`, h))}
         </tr>
       </thead>
@@ -3193,82 +3194,76 @@ function MatchupGrid({ defenderType }) {
 function FightReferenceModal({ character, isFinal, heldExtraIds = [], onClose }) {
   const extras = character === "shaolin" ? EXTRA_POSES_SHAOLIN : EXTRA_POSES_NINJA;
   const held = new Set(heldExtraIds);
-  const ctxLabel = isFinal ? "the Ultimate Duel" : "a board fight";
-  const legend = (label, color) => (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: 4, marginRight: 10, fontSize: 11 }}>
-      <span style={{ width: 11, height: 11, borderRadius: 3, background: color, display: "inline-block" }} />
-      {label} wins
-    </span>
+  const colHead = (label, active) => (
+    <th style={{
+      padding: "3px 8px", fontSize: 11.5, textAlign: "left",
+      color: active ? "#7a5500" : "#8a7a55", fontWeight: 800,
+      borderBottom: "2px solid #d9c99b",
+    }}>{label}{active ? " ◄" : ""}</th>
   );
-  const ctxCell = (active) => ({
-    padding: "7px 10px", fontSize: 12, lineHeight: 1.45, verticalAlign: "top",
-    background: active ? "#fbf1d6" : "transparent",
-    border: active ? "1px solid #d4af37" : "1px solid #e3d5ac",
-    borderRadius: 6, color: "#4a3814",
-  });
+  const bodyCell = (text, active) => (
+    <td style={{
+      padding: "6px 8px", fontSize: 12, lineHeight: 1.4, verticalAlign: "top",
+      color: active ? "#3a2c0e" : "#8a7a55", fontWeight: active ? 600 : 400,
+      background: active ? "#faefd0" : "transparent",
+    }}>{text}</td>
+  );
 
   return (
     <div style={{ ...MODAL_OVERLAY, zIndex: 3000 }}>
       <Draggable style={{
-        ...MODAL_BOX, maxWidth: 640, width: "94%", maxHeight: "90vh",
-        overflowY: "auto", textAlign: "left",
+        ...MODAL_BOX, maxWidth: 600, width: "94%",
+        padding: "18px 22px", textAlign: "left",
+        maxHeight: "94vh", overflowY: "auto",
       }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10 }}>
           <h2 style={{ margin: 0, fontSize: 20, color: "#7a5500" }}>How Fights Work</h2>
-          <span style={{ fontSize: 12, color: "#8a7a55" }}>You are in {ctxLabel}</span>
+          <span style={{ fontSize: 12, color: "#8a7a55" }}>{isFinal ? "Ultimate Duel" : "Board fight"}</span>
         </div>
 
-        <h3 style={{ fontSize: 15, color: "#5a4317", margin: "14px 0 6px 0" }}>Pose matchups</h3>
-        <p style={{ fontSize: 12.5, color: "#5a4317", margin: "0 0 10px 0", lineHeight: 1.5 }}>
-          A pose is a <strong>type</strong> (Strike, Block, Dodge) and a <strong>height</strong>
-          {" "}(High, Mid, Low). These grids show who wins each Strike matchup. Every other
-          pairing — Strike vs Strike, Block vs Block, Dodge vs Dodge, Block vs Dodge — is decided by <strong>dice</strong>.
-        </p>
-        <div style={{ marginBottom: 6 }}>
-          {legend("Strike", REF_WIN_COLOR.Strike)}{legend("Block", REF_WIN_COLOR.Block)}
-          {legend("Dodge", REF_WIN_COLOR.Dodge)}{legend("Dice", REF_WIN_COLOR.Dice)}
+        <div style={{ display: "flex", gap: 22, flexWrap: "wrap", justifyContent: "center" }}>
+          <div><div style={{ textAlign: "center", fontSize: 12, fontWeight: 800, color: "#5a4317", marginBottom: 3 }}>Strike vs Dodge</div><MatchupGrid defenderType="Dodge" /></div>
+          <div><div style={{ textAlign: "center", fontSize: 12, fontWeight: 800, color: "#5a4317", marginBottom: 3 }}>Strike vs Block</div><MatchupGrid defenderType="Block" /></div>
         </div>
-        <div style={{ display: "flex", gap: 18, flexWrap: "wrap", justifyContent: "center", margin: "8px 0 6px" }}>
-          <div><div style={{ textAlign: "center", fontSize: 12, fontWeight: 700, color: "#5a4317", marginBottom: 4 }}>Strike vs Dodge</div><MatchupGrid defenderType="Dodge" /></div>
-          <div><div style={{ textAlign: "center", fontSize: 12, fontWeight: 700, color: "#5a4317", marginBottom: 4 }}>Strike vs Block</div><MatchupGrid defenderType="Block" /></div>
+        <div style={{ textAlign: "center", fontSize: 11.5, color: "#8a7a55", margin: "6px 0 2px" }}>
+          Every other pairing is decided by <strong>dice</strong>.
         </div>
 
-        <h3 style={{ fontSize: 15, color: "#5a4317", margin: "18px 0 6px 0" }}>Secret techniques</h3>
-        <p style={{ fontSize: 12.5, color: "#5a4317", margin: "0 0 10px 0", lineHeight: 1.5 }}>
-          A secret technique wins its round <strong>exactly as often as an ordinary strike of the
-          same height</strong> — what changes is the consequence. The current context is highlighted.
-        </p>
-        {extras.map((p) => {
-          const kind = TECHNIQUE_KIND[p.id];
-          const note = TECHNIQUE_DISCOVERY[kind];
-          const owned = held.has(p.id);
-          return (
-            <div key={p.id} style={{
-              border: `1px solid ${owned ? "#d4af37" : "#e3d5ac"}`, borderRadius: 8,
-              padding: "10px 12px", marginBottom: 10,
-              background: owned ? "rgba(212,175,55,0.08)" : "#fffdf6",
-            }}>
-              <div style={{ fontSize: 14, fontWeight: 700, color: "#4a3814", marginBottom: 6 }}>
-                {p.name} <span style={{ fontWeight: 400, color: "#8a7a55" }}>· Strike / {p.height}</span>
-                {owned && <span style={{ marginLeft: 8, fontSize: 11, color: "#7a5500" }}>✦ held</span>}
-              </div>
-              <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: 4 }}>
-                <tbody>
-                  <tr>
-                    <td style={{ ...ctxCell(!isFinal), width: 74, fontWeight: 700, fontSize: 12 }}>Board fight</td>
-                    <td style={ctxCell(!isFinal)}>{note.board}</td>
-                  </tr>
-                  <tr>
-                    <td style={{ ...ctxCell(isFinal), width: 74, fontWeight: 700, fontSize: 12 }}>Ultimate Duel</td>
-                    <td style={ctxCell(isFinal)}>{note.duel}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          );
-        })}
+        <h3 style={{ fontSize: 15, color: "#5a4317", margin: "14px 0 2px 0" }}>Secret techniques</h3>
+        <div style={{ fontSize: 11.5, color: "#8a7a55", marginBottom: 6 }}>
+          Same win chance as a normal strike — only the stakes change. On the board, all are <strong>sudden death</strong>: the round winner takes the whole fight.
+        </div>
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <thead>
+            <tr>
+              {colHead("Technique", false)}
+              {colHead("On the board", !isFinal)}
+              {colHead("In the duel", isFinal)}
+            </tr>
+          </thead>
+          <tbody>
+            {extras.map((p) => {
+              const note = TECHNIQUE_CARD_NOTE[TECHNIQUE_KIND[p.id]];
+              const owned = held.has(p.id);
+              const boardRider = note.board.startsWith(SUDDEN_DEATH_PREFIX)
+                ? note.board.slice(SUDDEN_DEATH_PREFIX.length) : note.board;
+              return (
+                <tr key={p.id} style={{ borderTop: "1px solid #eaddb8" }}>
+                  <td style={{ padding: "6px 8px", fontSize: 12.5, verticalAlign: "top" }}>
+                    <div style={{ fontWeight: 800, color: "#4a3814" }}>
+                      {p.name}{owned && <span style={{ color: "#7a5500" }}> ✦</span>}
+                    </div>
+                    <div style={{ fontSize: 11, color: "#8a7a55" }}>Strike / {p.height}</div>
+                  </td>
+                  {bodyCell(boardRider, !isFinal)}
+                  {bodyCell(note.duel, isFinal)}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
 
-        <div style={{ textAlign: "center", marginTop: 12 }}>
+        <div style={{ textAlign: "center", marginTop: 14 }}>
           <button style={BTN_PRIMARY} onClick={onClose}>Close</button>
         </div>
       </Draggable>
