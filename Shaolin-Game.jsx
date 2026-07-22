@@ -4568,17 +4568,12 @@ function StoryBeatModal({ title, body, onClose }) {
   );
 }
 
-// Fresh mid-game-beat bookkeeping (reset each new game). Shared / board-wide:
-//   turn          — legit-move counter, for spacing
-//   lastShownTurn — the turn a beat last appeared (spacing floor)
-//   shownCount    — beats shown so far (cap 2)
-//   shown         — which beat kinds have already fired (once each)
-//   demonDefeated — set when any player first beats a Demon Ninja
-//   queue         — beat kinds detected but not yet shown
-const MID_BEAT_SPACING = 3;   // ≥3 legit moves between two beats
+// Mid-game beats fire immediately at the moment they happen (Equator when the
+// chip reaches tile 33, Demon's Fall right after the fight), so the bookkeeping
+// is just "which kinds have fired" and a cap. Reset each new game.
+const EQUATOR_TILE = 33;   // reaching this tile crosses the halfway point
 function freshBeatState() {
-  return { turn: 0, lastShownTurn: -99, shownCount: 0,
-           shown: { equator: false, demon: false }, demonDefeated: false, queue: [] };
+  return { shown: { equator: false, demon: false }, shownCount: 0 };
 }
 
 export default function ShaolinGame() {
@@ -4745,41 +4740,23 @@ export default function ShaolinGame() {
     }
   }
 
-  // Mid-game narrative beats. Called at the start of each legit move, so a beat
-  // appears right before the player rolls, driven by conditions met on earlier
-  // turns. Shared / board-wide, ≤2 per game, spaced, once each. Never fires
-  // during a battle (this runs before the roll, not inside one).
-  async function maybeShowMidGameBeat() {
+  // Show a mid-game narrative beat immediately, at the moment it happens. Shared
+  // / board-wide, once per kind, at most 2 per game. Callers await it so the
+  // turn pauses on the modal, then continues.
+  async function showBeat(kind) {
     const b = beatRef.current;
-    b.turn += 1;
-    const planned = () => b.shownCount + b.queue.length;
-    // Equator: any player has crossed the halfway point (~tile 33).
-    if (!b.shown.equator && !b.queue.includes("equator") && planned() < 2 &&
-        ((shaolinTile || 0) >= 33 || (ninjaTile || 0) >= 33)) {
-      b.queue.push("equator");
-    }
-    // Demon's Fall: any player has beaten a Demon Ninja (armed in the fight).
-    if (!b.shown.demon && !b.queue.includes("demon") && planned() < 2 && b.demonDefeated) {
-      b.queue.push("demon");
-    }
-    // Show one if under the cap and spaced far enough from the last beat.
-    if (b.queue.length && b.shownCount < 2 && (b.turn - b.lastShownTurn) >= MID_BEAT_SPACING) {
-      const kind = b.queue.shift();
-      const beat = getMidGameBeat(kind);
-      if (beat) {
-        b.shown[kind] = true;
-        b.shownCount += 1;
-        b.lastShownTurn = b.turn;
-        await showModal({ type: "story_beat", title: beat.title, body: beat.body });
-        setModal(null);
-      }
-    }
+    if (b.shown[kind] || b.shownCount >= 2) return;
+    const beat = getMidGameBeat(kind);
+    if (!beat) return;
+    b.shown[kind] = true;
+    b.shownCount += 1;
+    await showModal({ type: "story_beat", title: beat.title, body: beat.body });
+    setModal(null);
   }
 
   async function rollFor(character, opts = {}) {
     if (isRolling || (currentTurn !== character && currentTurn !== "any")) return;
     setIsRolling(true);
-    await maybeShowMidGameBeat();
     const tiles = board.tiles;
     const directTarget = opts.directTarget;
     const isDirect = directTarget != null;
@@ -5218,8 +5195,9 @@ export default function ShaolinGame() {
           ...prev,
           ...Array.from({ length: result.logEntries }, () => ({ ninjaType, outcome })),
         ]);
-        // Arm the "Demon's Fall" narrative beat on the first demon victory.
-        if (outcome === "won" && ninjaType === "demon") beatRef.current.demonDefeated = true;
+        // "Demon's Fall" beat — immediately after the fight modals resolve, on
+        // the first demon victory (a win, so no setback follows).
+        if (outcome === "won" && ninjaType === "demon") await showBeat("demon");
         if (outcome === "lost") {
           const setback = NINJA_SETBACK[ninjaType];
           const target = Math.max(1, tile - setback);
@@ -5292,6 +5270,7 @@ export default function ShaolinGame() {
           setNinjaUsedTrapTypes(trapState.ninja.usedTypes);
           setNinjaTrappedTiles(trapState.ninja.triggered);
         }
+        if ((current || 0) >= EQUATOR_TILE) await showBeat("equator"); // jump caught the crossing
         setIsRolling(false);
         setCurrentTurn(character === "shaolin" ? "ninja" : "shaolin");
         return;
@@ -5334,6 +5313,7 @@ export default function ShaolinGame() {
         setNinjaUsedTrapTypes(trapState.ninja.usedTypes);
         setNinjaTrappedTiles(trapState.ninja.triggered);
       }
+      if ((current || 0) >= EQUATOR_TILE) await showBeat("equator"); // jump caught the crossing
       setIsRolling(false);
       setCurrentTurn(character === "shaolin" ? "ninja" : "shaolin");
       return;
@@ -5371,6 +5351,11 @@ export default function ShaolinGame() {
 
       setTile(next);
       current = next;
+
+      // Equator beat — fire the instant the chip reaches the halfway tile,
+      // before this tile's landing logic. If 33 is a pass-through step, movement
+      // resumes on Continue; if it's the destination, its landing modal follows.
+      if (next === EQUATOR_TILE) await showBeat("equator");
 
       const isLastStep = i === steps - 1;
       const t = tiles[next].type;
@@ -5469,6 +5454,7 @@ export default function ShaolinGame() {
       setNinjaTrappedTiles(trapState.ninja.triggered);
     }
 
+    if ((current || 0) >= EQUATOR_TILE) await showBeat("equator"); // jump/ladder caught the crossing
     setIsRolling(false);
     setCurrentTurn(character === "shaolin" ? "ninja" : "shaolin");
   }

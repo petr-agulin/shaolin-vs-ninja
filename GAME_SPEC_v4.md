@@ -10,7 +10,7 @@ A digital board game inspired by a classic Polish tabletop game "Bruce Lee" (198
 
 The game is built as a React/JSX single-page application running in the browser. No backend, no persistent state between sessions. Optional AI narration via various AI/LLM APIs, but gameplay must never depend on it.
 
-A session is framed by story: an intro screen sets the scene before the first roll, and a closing epilogue keyed to the winner plays after the Ultimate Duel. In between, up to two shared mid-game beats appear — one when a player first crosses the halfway point, and one the first time a Demon Ninja is defeated — shown just before the next player's move. All of this is flavour only and affects no rules.
+A session is framed by story: an intro screen sets the scene before the first roll, and a closing epilogue keyed to the winner plays after the Ultimate Duel. In between, up to two shared mid-game beats appear — one the moment a player first crosses the halfway point (tile 33), and one the first time a Demon Ninja is defeated — shown immediately as they happen. All of this is flavour only and affects no rules.
 
 ---
 
