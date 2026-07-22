@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import bambooBackground from "./IMAGES/Bamboo.jpg";
 import { getFinalStory } from "./FinalStories.js";
 import { getGameStartStory } from "./GameStartStory.js";
@@ -3141,6 +3141,29 @@ function ScorePips({
   );
 }
 
+// ---- Combat juice ----------------------------------------------------------
+// Purely cosmetic feedback on key battle beats — a colour flash and a screen
+// shake — driven by the Web Animations API so there is no global CSS and each
+// effect self-cleans. Nothing here touches game state or outcomes.
+function FlashOverlay({ flash }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!flash || !el) return;
+    // A "big" flash fills the screen (duel decided); otherwise a vignette that
+    // stays clear in the centre so result text remains readable.
+    el.style.background = flash.big
+      ? flash.color
+      : `radial-gradient(circle at center, transparent 45%, ${flash.color} 100%)`;
+    const anim = el.animate(
+      [{ opacity: flash.big ? 0.9 : 1 }, { opacity: 0 }],
+      { duration: flash.big ? 550 : 380, easing: "ease-out" }
+    );
+    return () => anim.cancel();
+  }, [flash ? flash.n : 0]);
+  return <div ref={ref} style={{ position: "fixed", inset: 0, pointerEvents: "none", opacity: 0, zIndex: 2600 }} />;
+}
+
 // ---- FightReferenceModal ---------------------------------------------------
 // A read-only "how fights work" overlay: the base pose matchups plus what each
 // of the viewing player's secret techniques does, on the board and in the duel.
@@ -3353,6 +3376,30 @@ function BattleScreen({
   // "How fights work" reference overlay. Holds the player ("p1"/"p2") who
   // opened it, so it shows that player's own techniques; null when closed.
   const [referencePlayer, setReferencePlayer] = useState(null);
+  // Combat juice (cosmetic). A shake wrapper around the battle content and a
+  // flash overlay; both fire on key beats and touch no game state.
+  const shakeRef = useRef(null);
+  const [flash, setFlash] = useState(null); // { color, big, n } | null
+  const flashN = useRef(0);
+  const reduceMotion = typeof window !== "undefined" && window.matchMedia
+    && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  function triggerFlash(color, big = false) {
+    flashN.current += 1;
+    setFlash({ color, big, n: flashN.current });
+  }
+  function doShake(px) {
+    if (reduceMotion || !shakeRef.current) return;
+    shakeRef.current.animate(
+      [
+        { transform: "translate(0px,0px)" },
+        { transform: `translate(${px}px,${-px * 0.6}px)` },
+        { transform: `translate(${-px}px,${px * 0.6}px)` },
+        { transform: `translate(${px * 0.6}px,0px)` },
+        { transform: "translate(0px,0px)" },
+      ],
+      { duration: 300, easing: "ease-in-out" }
+    );
+  }
   const [phase, setPhase] = useState(() => {
     if (!isFinal || isSolo) return "p1_choose";
     const p1Eye = p1Sorceries.some((s) => s.id === "oracle_eye");
@@ -3395,6 +3442,27 @@ function BattleScreen({
   const [magicPowderPending, setMagicPowderPending] = useState(null);
   // Iron Bell — the round resolved as a loss; offer ring/decline until decided.
   const [ironBellDeclined, setIronBellDeclined] = useState(false);
+
+  // Combat juice: on a resolved round, a technique burst (gold) or a strike
+  // impact (red) with a shake. Dice-decided ordinary rounds stay calm.
+  useEffect(() => {
+    if (phase !== "reveal" || !finalWinner) return;
+    const techniquePlayed = !!techniqueKind(p1Choice) || (!isSolo && !!techniqueKind(p2Choice));
+    if (techniquePlayed) {
+      triggerFlash("rgba(212,175,55,0.85)");
+      doShake(7);
+    } else if (outcome && /Strike wins/.test(outcome.reason)) {
+      triggerFlash("rgba(200,60,30,0.7)");
+      doShake(9);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, finalWinner]);
+
+  // Combat juice: the duel's deciding moment gets a bright celebratory flash.
+  useEffect(() => {
+    if (phase === "battle_end" && isFinal) triggerFlash("rgba(255,238,180,0.9)", true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase]);
 
   // Final duel + both players hold Oracle's Eye → cancel out: spend both
   // on mount. The "oracle_cancel" phase is shown briefly then the user
@@ -4341,13 +4409,17 @@ function BattleScreen({
 
   return (
     <div style={MODAL_OVERLAY}>
-      {phase === "oracle_cancel" && oracleCancelScreen()}
-      {phase === "p1_choose"   && chooseScreen("p1", p1Label, p1Poses)}
-      {phase === "handoff_p2"  && handoffScreen("p2", p2Label)}
-      {phase === "p2_choose"   && chooseScreen("p2", p2Label, p2Poses)}
-      {phase === "handoff_p1"  && handoffScreen("p1", p1Label)}
-      {phase === "reveal"      && revealScreen()}
-      {phase === "battle_end"  && endScreen()}
+      {/* Shake wrapper: transforms only the battle content, never the backdrop
+          or the fixed overlays below, so a shake never reveals the board edge. */}
+      <div ref={shakeRef} style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        {phase === "oracle_cancel" && oracleCancelScreen()}
+        {phase === "p1_choose"   && chooseScreen("p1", p1Label, p1Poses)}
+        {phase === "handoff_p2"  && handoffScreen("p2", p2Label)}
+        {phase === "p2_choose"   && chooseScreen("p2", p2Label, p2Poses)}
+        {phase === "handoff_p1"  && handoffScreen("p1", p1Label)}
+        {phase === "reveal"      && revealScreen()}
+        {phase === "battle_end"  && endScreen()}
+      </div>
       {referencePlayer && (
         <FightReferenceModal
           character={referencePlayer === "p1" ? p1Character : p2Character}
@@ -4356,6 +4428,7 @@ function BattleScreen({
           onClose={() => setReferencePlayer(null)}
         />
       )}
+      <FlashOverlay flash={flash} />
     </div>
   );
 }
