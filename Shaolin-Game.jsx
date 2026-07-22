@@ -3168,7 +3168,7 @@ function FlashOverlay({ flash }) {
     // the centre so result text remains readable.
     el.style.background = flash.fill
       ? flash.color
-      : `radial-gradient(circle at center, transparent 45%, ${flash.color} 100%)`;
+      : `radial-gradient(circle at center, transparent ${flash.inner != null ? flash.inner : 45}%, ${flash.color} 100%)`;
     const anim = el.animate(
       [{ opacity: flash.peak != null ? flash.peak : 1 }, { opacity: 0 }],
       { duration: flash.dur || 400, easing: "ease-out" }
@@ -3540,13 +3540,20 @@ function BattleScreen({
       // player (either side in the duel) uses its character colour — Shaolin
       // green, Ninja red.
       let color;
+      let opts = { dur: 570 };
       if (isSolo && finalWinner === "p2") {
         color = hexToRgba((NINJA[ninjaType] && NINJA[ninjaType].color) || "#2c2c34", 0.85);
+        // Black blends into the dark battle backdrop, so an equal-length flash
+        // reads as a blink. Make it denser and longer so it feels the same.
+        if (ninjaType === "black") {
+          color = hexToRgba(NINJA.black.color, 0.96);
+          opts = { dur: 850, inner: 30 };
+        }
       } else {
         const ch = finalWinner === "p1" ? p1Character : p2Character;
         color = STRIKE_FLASH_PLAYER[ch] || "rgba(255,255,255,0.85)";
       }
-      triggerFlash(color, { dur: 570 });
+      triggerFlash(color, opts);
       doShake(9, 450);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
