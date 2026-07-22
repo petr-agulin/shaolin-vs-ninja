@@ -3142,6 +3142,20 @@ function ScorePips({
 }
 
 // ---- Combat juice ----------------------------------------------------------
+function hexToRgba(hex, a) {
+  const h = hex.replace("#", "");
+  const full = h.length === 3 ? h.split("").map((c) => c + c).join("") : h;
+  const n = parseInt(full, 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+}
+// Strike-splash colour by who landed the blow. Players use their character
+// colours (matching their score circles); computer enemies use their ninja-type
+// colour (see NINJA).
+const STRIKE_FLASH_PLAYER = {
+  shaolin: "rgba(34,197,94,0.82)",   // green — Shaolin Master
+  ninja:   "rgba(255,82,82,0.82)",   // red — Ninja Warrior (player)
+};
+
 // Purely cosmetic feedback on key battle beats — a colour flash and a screen
 // shake — driven by the Web Animations API so there is no global CSS and each
 // effect self-cleans. Nothing here touches game state or outcomes.
@@ -3522,11 +3536,17 @@ function BattleScreen({
     }
     const winnerPose = finalWinner === "p1" ? p1Choice : p2Choice;
     if (winnerPose && winnerPose.type === "Strike") {
-      // Board fight: player (p1) white, computer enemy (p2) red.
-      // Duel: both are players, so colour by character — Shaolin white, Ninja red.
-      const winnerChar = finalWinner === "p1" ? p1Character : p2Character;
-      const red = isFinal ? winnerChar === "ninja" : finalWinner === "p2";
-      triggerFlash(red ? "rgba(200,60,30,0.72)" : "rgba(255,255,255,0.85)", { dur: 570 });
+      // Colour by who struck: a computer enemy uses its ninja-type colour; a
+      // player (either side in the duel) uses its character colour — Shaolin
+      // green, Ninja red.
+      let color;
+      if (isSolo && finalWinner === "p2") {
+        color = hexToRgba((NINJA[ninjaType] && NINJA[ninjaType].color) || "#2c2c34", 0.85);
+      } else {
+        const ch = finalWinner === "p1" ? p1Character : p2Character;
+        color = STRIKE_FLASH_PLAYER[ch] || "rgba(255,255,255,0.85)";
+      }
+      triggerFlash(color, { dur: 570 });
       doShake(9, 450);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
