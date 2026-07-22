@@ -3141,6 +3141,141 @@ function ScorePips({
   );
 }
 
+// ---- FightReferenceModal ---------------------------------------------------
+// A read-only "how fights work" overlay: the base pose matchups plus what each
+// of the viewing player's secret techniques does, on the board and in the duel.
+// Matchup cells are derived by calling the real resolveCombat, so they can never
+// drift from the actual rules; technique text reuses TECHNIQUE_DISCOVERY.
+const REFERENCE_HEIGHTS = ["High", "Mid", "Low"];
+const REF_WIN_COLOR = { Strike: "#c0491f", Block: "#3a5fb0", Dodge: "#2f8f56", Dice: "#7a6f57" };
+
+function matchupWinner(strikeHeight, defenderType, defenderHeight) {
+  const res = resolveCombat(
+    { type: "Strike", height: strikeHeight },
+    { type: defenderType, height: defenderHeight }
+  );
+  if (res.winner === "p1") return "Strike";
+  if (res.winner === "p2") return defenderType; // "Block" or "Dodge"
+  return "Dice";
+}
+
+function MatchupGrid({ defenderType }) {
+  const cell = (key, txt) => (
+    <td key={key} style={{
+      padding: "6px 4px", textAlign: "center", fontSize: 12, fontWeight: 700,
+      color: "#fff", background: REF_WIN_COLOR[txt], border: "1px solid #fff8e7",
+      borderRadius: 4, minWidth: 46,
+    }}>{txt}</td>
+  );
+  const head = (key, txt, dim) => (
+    <th key={key} style={{ padding: "4px 6px", fontSize: dim ? 10 : 11, color: dim ? "#8a7a55" : "#5a4317", fontWeight: 700 }}>{txt}</th>
+  );
+  return (
+    <table style={{ borderCollapse: "separate", borderSpacing: 3, margin: "0 auto" }}>
+      <thead>
+        <tr>
+          {head("corner", `Strike↓ / ${defenderType}→`, true)}
+          {REFERENCE_HEIGHTS.map((h) => head(`h-${h}`, h))}
+        </tr>
+      </thead>
+      <tbody>
+        {REFERENCE_HEIGHTS.map((sh) => (
+          <tr key={sh}>
+            {head(`r-${sh}`, sh)}
+            {REFERENCE_HEIGHTS.map((dh) => cell(`${sh}-${dh}`, matchupWinner(sh, defenderType, dh)))}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function FightReferenceModal({ character, isFinal, heldExtraIds = [], onClose }) {
+  const extras = character === "shaolin" ? EXTRA_POSES_SHAOLIN : EXTRA_POSES_NINJA;
+  const held = new Set(heldExtraIds);
+  const ctxLabel = isFinal ? "the Ultimate Duel" : "a board fight";
+  const legend = (label, color) => (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 4, marginRight: 10, fontSize: 11 }}>
+      <span style={{ width: 11, height: 11, borderRadius: 3, background: color, display: "inline-block" }} />
+      {label} wins
+    </span>
+  );
+  const ctxCell = (active) => ({
+    padding: "7px 10px", fontSize: 12, lineHeight: 1.45, verticalAlign: "top",
+    background: active ? "#fbf1d6" : "transparent",
+    border: active ? "1px solid #d4af37" : "1px solid #e3d5ac",
+    borderRadius: 6, color: "#4a3814",
+  });
+
+  return (
+    <div style={{ ...MODAL_OVERLAY, zIndex: 3000 }}>
+      <Draggable style={{
+        ...MODAL_BOX, maxWidth: 640, width: "94%", maxHeight: "90vh",
+        overflowY: "auto", textAlign: "left",
+      }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+          <h2 style={{ margin: 0, fontSize: 20, color: "#7a5500" }}>How Fights Work</h2>
+          <span style={{ fontSize: 12, color: "#8a7a55" }}>You are in {ctxLabel}</span>
+        </div>
+
+        <h3 style={{ fontSize: 15, color: "#5a4317", margin: "14px 0 6px 0" }}>Pose matchups</h3>
+        <p style={{ fontSize: 12.5, color: "#5a4317", margin: "0 0 10px 0", lineHeight: 1.5 }}>
+          A pose is a <strong>type</strong> (Strike, Block, Dodge) and a <strong>height</strong>
+          {" "}(High, Mid, Low). These grids show who wins each Strike matchup. Every other
+          pairing — Strike vs Strike, Block vs Block, Dodge vs Dodge, Block vs Dodge — is decided by <strong>dice</strong>.
+        </p>
+        <div style={{ marginBottom: 6 }}>
+          {legend("Strike", REF_WIN_COLOR.Strike)}{legend("Block", REF_WIN_COLOR.Block)}
+          {legend("Dodge", REF_WIN_COLOR.Dodge)}{legend("Dice", REF_WIN_COLOR.Dice)}
+        </div>
+        <div style={{ display: "flex", gap: 18, flexWrap: "wrap", justifyContent: "center", margin: "8px 0 6px" }}>
+          <div><div style={{ textAlign: "center", fontSize: 12, fontWeight: 700, color: "#5a4317", marginBottom: 4 }}>Strike vs Dodge</div><MatchupGrid defenderType="Dodge" /></div>
+          <div><div style={{ textAlign: "center", fontSize: 12, fontWeight: 700, color: "#5a4317", marginBottom: 4 }}>Strike vs Block</div><MatchupGrid defenderType="Block" /></div>
+        </div>
+
+        <h3 style={{ fontSize: 15, color: "#5a4317", margin: "18px 0 6px 0" }}>Secret techniques</h3>
+        <p style={{ fontSize: 12.5, color: "#5a4317", margin: "0 0 10px 0", lineHeight: 1.5 }}>
+          A secret technique wins its round <strong>exactly as often as an ordinary strike of the
+          same height</strong> — what changes is the consequence. The current context is highlighted.
+        </p>
+        {extras.map((p) => {
+          const kind = TECHNIQUE_KIND[p.id];
+          const note = TECHNIQUE_DISCOVERY[kind];
+          const owned = held.has(p.id);
+          return (
+            <div key={p.id} style={{
+              border: `1px solid ${owned ? "#d4af37" : "#e3d5ac"}`, borderRadius: 8,
+              padding: "10px 12px", marginBottom: 10,
+              background: owned ? "rgba(212,175,55,0.08)" : "#fffdf6",
+            }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: "#4a3814", marginBottom: 6 }}>
+                {p.name} <span style={{ fontWeight: 400, color: "#8a7a55" }}>· Strike / {p.height}</span>
+                {owned && <span style={{ marginLeft: 8, fontSize: 11, color: "#7a5500" }}>✦ held</span>}
+              </div>
+              <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: 4 }}>
+                <tbody>
+                  <tr>
+                    <td style={{ ...ctxCell(!isFinal), width: 74, fontWeight: 700, fontSize: 12 }}>Board fight</td>
+                    <td style={ctxCell(!isFinal)}>{note.board}</td>
+                  </tr>
+                  <tr>
+                    <td style={{ ...ctxCell(isFinal), width: 74, fontWeight: 700, fontSize: 12 }}>Ultimate Duel</td>
+                    <td style={ctxCell(isFinal)}>{note.duel}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          );
+        })}
+
+        <div style={{ textAlign: "center", marginTop: 12 }}>
+          <button style={BTN_PRIMARY} onClick={onClose}>Close</button>
+        </div>
+      </Draggable>
+    </div>
+  );
+}
+
 function BattleScreen({
   mode = "duel", ninjaType, activeCharacter, otherCharacter,
   p1Label, p2Label, p1Extras = [], p2Extras = [],
@@ -3197,6 +3332,9 @@ function BattleScreen({
     return "p1";
   });
   const [deviceHolder, setDeviceHolder] = useState("p1");
+  // "How fights work" reference overlay. Holds the player ("p1"/"p2") who
+  // opened it, so it shows that player's own techniques; null when closed.
+  const [referencePlayer, setReferencePlayer] = useState(null);
   const [phase, setPhase] = useState(() => {
     if (!isFinal || isSolo) return "p1_choose";
     const p1Eye = p1Sorceries.some((s) => s.id === "oracle_eye");
@@ -3662,6 +3800,17 @@ function BattleScreen({
           <h2 style={{ margin: "6px 0 0 0", fontSize: 18, color: "#1a1208" }}>
             {label}, choose your pose
           </h2>
+          <button
+            onClick={() => setReferencePlayer(player)}
+            style={{
+              marginTop: 8, padding: "4px 12px", borderRadius: 14,
+              background: "rgba(122,85,0,0.12)", border: "1px solid #b79b57",
+              color: "#5a4317", fontFamily: "Georgia, serif", fontSize: 12,
+              fontWeight: 700, cursor: "pointer",
+            }}
+          >
+            ❓ How fights work
+          </button>
           {!isSolo && (
             <div style={{ fontSize: 12, fontStyle: "italic", marginTop: 6, color: "#3a2c12" }}>
               (other player look away)
@@ -4181,6 +4330,14 @@ function BattleScreen({
       {phase === "handoff_p1"  && handoffScreen("p1", p1Label)}
       {phase === "reveal"      && revealScreen()}
       {phase === "battle_end"  && endScreen()}
+      {referencePlayer && (
+        <FightReferenceModal
+          character={referencePlayer === "p1" ? p1Character : p2Character}
+          isFinal={isFinal}
+          heldExtraIds={(referencePlayer === "p1" ? p1Extras : p2Extras).map((p) => p.id)}
+          onClose={() => setReferencePlayer(null)}
+        />
+      )}
     </div>
   );
 }
@@ -4190,6 +4347,9 @@ export default function ShaolinGame() {
   const [shaolinTile, setShaolinTile] = useState(null);
   const [ninjaTile, setNinjaTile] = useState(null);
   const [currentTurn, setCurrentTurn] = useState(null); // null | "any" | "shaolin" | "ninja"
+  // Board-level "How fights work" reference: holds the character whose techniques
+  // to show, or null when closed.
+  const [boardReferenceChar, setBoardReferenceChar] = useState(null);
   const [isRolling, setIsRolling] = useState(false);
   const [modal, setModal] = useState(null); // null | { type, resolve, ...data }
   const [lastRoll, setLastRoll] = useState(null); // null | { value, character }
@@ -5174,6 +5334,17 @@ export default function ShaolinGame() {
               maxHeight: "calc(100vh - 24px)",
               overflowY: "auto",
             }}>
+              <button
+                onClick={() => setBoardReferenceChar(currentTurn === "ninja" ? "ninja" : "shaolin")}
+                style={{
+                  padding: "7px 12px", borderRadius: 8,
+                  background: "#fff8e7", border: "1px solid #c4ad7b",
+                  color: "#5a4317", fontFamily: "Georgia, serif", fontSize: 13,
+                  fontWeight: 700, cursor: "pointer",
+                }}
+              >
+                ❓ How fights work
+              </button>
               <PlayerPanel
                 character="shaolin"
                 label="🥋 Shaolin Master"
@@ -5420,6 +5591,14 @@ export default function ShaolinGame() {
           item={modal.item}
           given={modal.given}
           onClose={() => modal.resolve("ok")}
+        />
+      )}
+      {boardReferenceChar && (
+        <FightReferenceModal
+          character={boardReferenceChar}
+          isFinal={false}
+          heldExtraIds={(boardReferenceChar === "shaolin" ? shaolinInventory : ninjaInventory).extraPoses.map((p) => p.id)}
+          onClose={() => setBoardReferenceChar(null)}
         />
       )}
     </div>
