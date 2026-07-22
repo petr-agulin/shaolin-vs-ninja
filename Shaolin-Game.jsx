@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useRef } from "react";
 import bambooBackground from "./IMAGES/Bamboo.jpg";
 import { getFinalStory } from "./FinalStories.js";
 import { getGameStartStory } from "./GameStartStory.js";
+import { getMidGameBeat } from "./MidGameStories.js";
 
 // Eagerly import every pose image. Images live in per-character subfolders
 // under IMAGES/. File names follow these patterns:
@@ -293,13 +294,16 @@ function placeFights(tiles) {
     ...Array(blackCount).fill("black"),
   ]);
 
-  // Ensure demon sits on tile > 20.
+  // Place the Demon Ninja in the mid-second-half (tiles 38..54): clearly past
+  // the equator, so the "Demon's Fall" narrative beat lands well after the
+  // "Equator" beat rather than colliding with it.
+  const DEMON_MIN = 38, DEMON_MAX = 54;
   const demonIdx = types.indexOf("demon");
-  if (positions[demonIdx] <= 20) {
+  if (positions[demonIdx] < DEMON_MIN || positions[demonIdx] > DEMON_MAX) {
     const candidates = positions
-      .map((p, i) => (p > 20 && types[i] !== "demon" ? i : -1))
+      .map((p, i) => (p >= DEMON_MIN && p <= DEMON_MAX && types[i] !== "demon" ? i : -1))
       .filter((i) => i >= 0);
-    if (candidates.length === 0) return false;
+    if (candidates.length === 0) return false; // no fight tile in range → regenerate
     const targetIdx = pick(candidates);
     [types[demonIdx], types[targetIdx]] = [types[targetIdx], types[demonIdx]];
   }
@@ -4540,11 +4544,49 @@ function BattleScreen({
   );
 }
 
+// ---- StoryBeatModal --------------------------------------------------------
+// A mid-game narrative beat, shown once before a player's move. Styled like the
+// epilogue; a single Continue button; alters no game state.
+function StoryBeatModal({ title, body, onClose }) {
+  return (
+    <div style={{ ...MODAL_OVERLAY, zIndex: 1500 }}>
+      <Draggable style={{
+        ...MODAL_BOX, maxWidth: 560, width: "94%",
+        background: "#120d04", border: "2px solid #d4af37", color: "#f5e8c4",
+        textAlign: "center",
+      }}>
+        <div aria-hidden style={{ fontSize: 38, marginBottom: 6, color: "#d4af37" }}>☯</div>
+        <h2 style={{ margin: "0 0 14px 0", fontSize: 21, color: "#d4af37", letterSpacing: 1 }}>{title}</h2>
+        <div style={{ textAlign: "left", fontSize: 15, lineHeight: 1.65, color: "#e8dcb0", fontStyle: "italic", marginBottom: 22 }}>
+          {body.split(/\n\s*\n/).map((para, i) => (
+            <p key={i} style={{ margin: i === 0 ? "0 0 12px 0" : "12px 0" }}>{para}</p>
+          ))}
+        </div>
+        <button style={BTN_PRIMARY} onClick={onClose}>Continue</button>
+      </Draggable>
+    </div>
+  );
+}
+
+// Fresh mid-game-beat bookkeeping (reset each new game). Shared / board-wide:
+//   turn          — legit-move counter, for spacing
+//   lastShownTurn — the turn a beat last appeared (spacing floor)
+//   shownCount    — beats shown so far (cap 2)
+//   shown         — which beat kinds have already fired (once each)
+//   demonDefeated — set when any player first beats a Demon Ninja
+//   queue         — beat kinds detected but not yet shown
+const MID_BEAT_SPACING = 3;   // ≥3 legit moves between two beats
+function freshBeatState() {
+  return { turn: 0, lastShownTurn: -99, shownCount: 0,
+           shown: { equator: false, demon: false }, demonDefeated: false, queue: [] };
+}
+
 export default function ShaolinGame() {
   const [board, setBoard] = useState(() => generateBoard());
   const [shaolinTile, setShaolinTile] = useState(null);
   const [ninjaTile, setNinjaTile] = useState(null);
   const [currentTurn, setCurrentTurn] = useState(null); // null | "any" | "shaolin" | "ninja"
+  const beatRef = useRef(freshBeatState());
   // Board-level "How fights work" reference: holds the character whose techniques
   // to show, or null when closed.
   const [boardReferenceChar, setBoardReferenceChar] = useState(null);
@@ -4634,6 +4676,7 @@ export default function ShaolinGame() {
     setShaolinTrappedTiles(new Set());
     setNinjaTrappedTiles(new Set());
     setSkipNotice(null);
+    beatRef.current = freshBeatState();
   }
 
   function startGame() {
@@ -4702,9 +4745,41 @@ export default function ShaolinGame() {
     }
   }
 
+  // Mid-game narrative beats. Called at the start of each legit move, so a beat
+  // appears right before the player rolls, driven by conditions met on earlier
+  // turns. Shared / board-wide, ≤2 per game, spaced, once each. Never fires
+  // during a battle (this runs before the roll, not inside one).
+  async function maybeShowMidGameBeat() {
+    const b = beatRef.current;
+    b.turn += 1;
+    const planned = () => b.shownCount + b.queue.length;
+    // Equator: any player has crossed the halfway point (~tile 33).
+    if (!b.shown.equator && !b.queue.includes("equator") && planned() < 2 &&
+        ((shaolinTile || 0) >= 33 || (ninjaTile || 0) >= 33)) {
+      b.queue.push("equator");
+    }
+    // Demon's Fall: any player has beaten a Demon Ninja (armed in the fight).
+    if (!b.shown.demon && !b.queue.includes("demon") && planned() < 2 && b.demonDefeated) {
+      b.queue.push("demon");
+    }
+    // Show one if under the cap and spaced far enough from the last beat.
+    if (b.queue.length && b.shownCount < 2 && (b.turn - b.lastShownTurn) >= MID_BEAT_SPACING) {
+      const kind = b.queue.shift();
+      const beat = getMidGameBeat(kind);
+      if (beat) {
+        b.shown[kind] = true;
+        b.shownCount += 1;
+        b.lastShownTurn = b.turn;
+        await showModal({ type: "story_beat", title: beat.title, body: beat.body });
+        setModal(null);
+      }
+    }
+  }
+
   async function rollFor(character, opts = {}) {
     if (isRolling || (currentTurn !== character && currentTurn !== "any")) return;
     setIsRolling(true);
+    await maybeShowMidGameBeat();
     const tiles = board.tiles;
     const directTarget = opts.directTarget;
     const isDirect = directTarget != null;
@@ -5143,6 +5218,8 @@ export default function ShaolinGame() {
           ...prev,
           ...Array.from({ length: result.logEntries }, () => ({ ninjaType, outcome })),
         ]);
+        // Arm the "Demon's Fall" narrative beat on the first demon victory.
+        if (outcome === "won" && ninjaType === "demon") beatRef.current.demonDefeated = true;
         if (outcome === "lost") {
           const setback = NINJA_SETBACK[ninjaType];
           const target = Math.max(1, tile - setback);
@@ -5788,6 +5865,13 @@ export default function ShaolinGame() {
         <TrapTributeModal
           item={modal.item}
           given={modal.given}
+          onClose={() => modal.resolve("ok")}
+        />
+      )}
+      {modal?.type === "story_beat" && (
+        <StoryBeatModal
+          title={modal.title}
+          body={modal.body}
           onClose={() => modal.resolve("ok")}
         />
       )}

@@ -10,7 +10,7 @@ A digital board game inspired by a classic Polish tabletop game "Bruce Lee" (198
 
 The game is built as a React/JSX single-page application running in the browser. No backend, no persistent state between sessions. Optional AI narration via various AI/LLM APIs, but gameplay must never depend on it.
 
-A session is bookended by story: an intro screen sets the scene before the first roll, and a closing epilogue keyed to the winner plays after the Ultimate Duel. Both are flavour only and affect no rules.
+A session is framed by story: an intro screen sets the scene before the first roll, and a closing epilogue keyed to the winner plays after the Ultimate Duel. In between, up to two shared mid-game beats appear — one when a player first crosses the halfway point, and one the first time a Demon Ninja is defeated — shown just before the next player's move. All of this is flavour only and affects no rules.
 
 ---
 
@@ -125,7 +125,7 @@ Every generated board must satisfy all of the following:
 - No two fight tiles adjacent to each other.
 - No fight tile within 3 tiles of the start (tiles 1–3 are always normal).
 - Fight tile ninja types are assigned at generation: ~45% Black, ~20% Fire, ~20% Shadow, ~10% Demon, remainder Black.
-- The Demon Ninja tile (if present) must not appear in the first 20 tiles.
+- The Demon Ninja tile is placed in the mid-second-half of the board (tiles 38–54), clearly past the halfway point.
 
 **Item tiles:**
 - Every row of the board must contain at least one item tile. No player can cross a whole row with nothing to find.
