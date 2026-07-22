@@ -3522,10 +3522,11 @@ function BattleScreen({
     }
     const winnerPose = finalWinner === "p1" ? p1Choice : p2Choice;
     if (winnerPose && winnerPose.type === "Strike") {
-      // White when a player lands the strike (both sides are players in the
-      // duel); red when the computer enemy lands it in a board fight.
-      const playerStruck = isFinal || finalWinner === "p1";
-      triggerFlash(playerStruck ? "rgba(255,255,255,0.85)" : "rgba(200,60,30,0.72)", { dur: 570 });
+      // Board fight: player (p1) white, computer enemy (p2) red.
+      // Duel: both are players, so colour by character — Shaolin white, Ninja red.
+      const winnerChar = finalWinner === "p1" ? p1Character : p2Character;
+      const red = isFinal ? winnerChar === "ninja" : finalWinner === "p2";
+      triggerFlash(red ? "rgba(200,60,30,0.72)" : "rgba(255,255,255,0.85)", { dur: 570 });
       doShake(9, 450);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
