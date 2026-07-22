@@ -165,6 +165,23 @@ Every generated board must satisfy all of the following:
 
 The first player to land on tile 64 triggers the Ultimate Duel immediately — the second player does not need to reach tile 64. The duel decides the game outright.
 
+### The Sacred Pagoda (gate before the duel)
+
+Tiles 61–63 are the **Sacred Pagoda** — the gated approach to the duel. The first time a player's move carries them into the pagoda (crossing to tile ≥ 61), a gate appears before they may go on to tile 64:
+
+- **Holding the Sacred Master Key** — the gate opens and the player continues toward the duel tile.
+- **Without the key** — the pagoda poses a **trial of 3 multiple-choice questions**. The player answers all three, then sees which were right, the correct answers, and short explanations.
+  - The number that must be correct is **3 minus the picklocks held** (so 3 with none, 2 with one, 1 with two).
+  - **Pass** → the player earns the Master Key (any picklocks complete into it) and is admitted.
+  - **Fail** → the player is swept back to **tile 40**, whose event then resolves; they may try again with fresh questions the next time they reach the pagoda.
+- Only the arriving player needs admission — the opponent is drawn into the duel without a key.
+
+Because the trial is always available, admission can always be earned; the pagoda can never dead-end a game.
+
+**The Sacred Master Key** is obtained three ways: found as an uncommon item during the board phase, forged from **three picklocks**, or earned by passing the pagoda's trial. It is kept for the session and **cannot be lost** to any trap.
+
+**Picklocks** are found by luck during play (up to three per player). Three combine into the Master Key. A picklock cannot be taken by Sorcery Theft, but can be handed to the opponent by Rival's Tribute.
+
 ---
 
 ## Movement
