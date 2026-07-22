@@ -3176,14 +3176,14 @@ function ConfettiBurst({ burst }) {
     const glyphs = ["🌸", "🏮", "🌸", "✨", "🪙", "🌸", "❁", "🎋", "🌸", "🧧"];
     const W = typeof window !== "undefined" ? window.innerWidth : 1000;
     const H = typeof window !== "undefined" ? window.innerHeight : 700;
-    setPieces(Array.from({ length: 32 }, (_, i) => ({
+    setPieces(Array.from({ length: 44 }, (_, i) => ({
       glyph: glyphs[i % glyphs.length],
       dx: (Math.random() * 2 - 1) * W * 0.45,
       dy: H * (0.35 + Math.random() * 0.55),
       up: 50 + Math.random() * 150,
       rot: (Math.random() * 2 - 1) * 600,
-      dur: 1600 + Math.random() * 1000,
-      delay: Math.random() * 220,
+      dur: 4800 + Math.random() * 3000,   // ~3x longer: slow, lingering drift
+      delay: Math.random() * 800,
       size: 18 + Math.random() * 22,
     })));
   }, [burst ? burst.n : 0]);
@@ -3203,7 +3203,7 @@ function ConfettiBurst({ burst }) {
         { duration: p.dur, delay: p.delay, easing: "cubic-bezier(.16,.7,.4,1)", fill: "forwards" }
       );
     });
-    const t = setTimeout(() => setPieces([]), 2900);
+    const t = setTimeout(() => setPieces([]), 8800);
     return () => clearTimeout(t);
   }, [pieces]);
 
@@ -3509,7 +3509,10 @@ function BattleScreen({
       triggerFlash("rgba(212,175,55,0.85)", { dur: 570 });
       doShake(7, 450);
     } else if (outcome && /Strike wins/.test(outcome.reason)) {
-      triggerFlash("rgba(200,60,30,0.7)", { dur: 570 });
+      // White when a player lands the strike (both sides are players in the
+      // duel); red when the computer enemy lands it in a board fight.
+      const playerStruck = isFinal || finalWinner === "p1";
+      triggerFlash(playerStruck ? "rgba(255,255,255,0.85)" : "rgba(200,60,30,0.72)", { dur: 570 });
       doShake(9, 450);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -3519,9 +3522,9 @@ function BattleScreen({
   // confetti burst, and a soft lingering gold glow (no quick white flash).
   useEffect(() => {
     if (phase === "battle_end" && isFinal) {
-      doShake(8, 1000);                       // no-ops under reduced motion
+      doShake(8, 3000);                       // no-ops under reduced motion
       if (!reduceMotion) triggerBurst();      // skip the flying confetti too
-      triggerFlash("rgba(212,175,55,0.55)", { peak: 0.7, dur: 1300 });
+      triggerFlash("rgba(212,175,55,0.55)", { peak: 0.7, dur: 2600 });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase]);
