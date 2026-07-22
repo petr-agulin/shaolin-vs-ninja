@@ -3,6 +3,7 @@ import bambooBackground from "./IMAGES/Bamboo.jpg";
 import { getFinalStory } from "./FinalStories.js";
 import { getGameStartStory } from "./GameStartStory.js";
 import { getMidGameBeat } from "./MidGameStories.js";
+import { drawQuizQuestions } from "./QuizQuestions.js";
 
 // Eagerly import every pose image. Images live in per-character subfolders
 // under IMAGES/. File names follow these patterns:
@@ -30,6 +31,7 @@ const MODAL_IMAGES = {
   finalDuel: null,
   finalDuelWin: { shaolin: null, ninja: null },
   gameStart: null,
+  pagoda: { arrival: null, transform: null, admission: { shaolin: null, ninja: null } },
 };
 for (const path in ALL_POSE_IMAGE_MODULES) {
   const mod = ALL_POSE_IMAGE_MODULES[path];
@@ -44,6 +46,12 @@ for (const path in ALL_POSE_IMAGE_MODULES) {
       else MODAL_IMAGES.finalDuel = mod;
     }
     else if (path.includes("/Modals/Game-start/")) MODAL_IMAGES.gameStart = mod;
+    else if (path.includes("/Modals/Pagoda/")) {
+      if (id === "arrival_to_pagoda") MODAL_IMAGES.pagoda.arrival = mod;
+      else if (id === "transform_picklocks_to_master_key") MODAL_IMAGES.pagoda.transform = mod;
+      else if (id === "master_key_admission_shaolin") MODAL_IMAGES.pagoda.admission.shaolin = mod;
+      else if (id === "master_key_admission_ninja") MODAL_IMAGES.pagoda.admission.ninja = mod;
+    }
     continue;
   }
   let file = path.split("/").pop().replace(/\.png$/i, "").toLowerCase();
@@ -95,6 +103,10 @@ if (typeof window !== "undefined") {
     MODAL_IMAGES.finalDuelWin.shaolin,
     MODAL_IMAGES.finalDuelWin.ninja,
     MODAL_IMAGES.gameStart,
+    MODAL_IMAGES.pagoda.arrival,
+    MODAL_IMAGES.pagoda.transform,
+    MODAL_IMAGES.pagoda.admission.shaolin,
+    MODAL_IMAGES.pagoda.admission.ninja,
   ].filter(Boolean));
   // Retain references to the preloaded Image objects on the global module so
   // the browser keeps the decoded bitmap in memory instead of evicting it once
@@ -820,6 +832,19 @@ function TileRect({ tile }) {
               strokeDasharray="3 2" />
         <NumBadge x={x + 5} y={y + 13} n={n} />
         <CenteredLabel cx={cx} cy={cy + 2} text="TRAP" fill={PALETTE.trapMark} size={12} weight={700} />
+      </g>
+    );
+  }
+
+  // Sacred Pagoda — tiles 61–63, the gated approach to the duel.
+  if (n >= 61 && n <= 63) {
+    return (
+      <g>
+        <rect x={x} y={y} width={TILE} height={TILE} rx={6}
+              fill="#e7d7a0" stroke="#9c7a1e" strokeWidth={1.8} />
+        <NumBadge x={x + 5} y={y + 13} n={n} />
+        <CenteredLabel cx={cx} cy={cy - 6} text="⛩" fill="#7a5500" size={18} />
+        <CenteredLabel cx={cx} cy={cy + 12} text="PAGODA" fill="#7a5500" size={8.5} weight={700} />
       </g>
     );
   }
@@ -1911,6 +1936,7 @@ function BattleLogPanel({ shaolinLog, ninjaLog }) {
 function PlayerPanel({
   character, label,
   sorceries, extraPoses,
+  masterKey = false, picklocks = 0,
   held = false, lockedType = null, headStart = null,
   tile = null,
   isMyTurn = false,
@@ -2077,6 +2103,34 @@ function PlayerPanel({
           </div>
         );
       })()}
+
+      {(masterKey || picklocks > 0) && (
+        <div>
+          <strong>Sacred Pagoda</strong>
+          <div style={{
+            marginTop: 4, background: "#fdf4dc", border: "1px solid #e4d3a5",
+            borderRadius: 6, padding: "6px 8px", minHeight: 36,
+            display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center",
+          }}>
+            {masterKey && (
+              <span title="The Sacred Master Key — admits you to the pagoda" style={{
+                background: "#f3e6c4", border: "1px solid #7a5500", borderRadius: 12,
+                padding: "3px 9px", fontSize: 12, display: "inline-flex", alignItems: "center", gap: 4,
+              }}>
+                🗝️ Master Key
+              </span>
+            )}
+            {picklocks > 0 && (
+              <span title="Picklocks — three combine into the Master Key" style={{
+                background: "#fff8e7", border: "1px solid #c4ad7b", borderRadius: 12,
+                padding: "3px 9px", fontSize: 12, display: "inline-flex", alignItems: "center", gap: 4,
+              }}>
+                🪝 Picklocks {picklocks}/3
+              </span>
+            )}
+          </div>
+        </div>
+      )}
 
       <div>
         <strong>Secret Techniques</strong>
@@ -2715,6 +2769,27 @@ function ItemModal({ variant, item, onClose }) {
             You search carefully. You already possess everything this place has to offer.
           </p>
           <button style={BTN_PRIMARY} onClick={onClose}>Continue</button>
+        </Draggable>
+      </div>
+    );
+  }
+  if (item.kind === "master_key") {
+    return (
+      <div style={MODAL_OVERLAY}>
+        <Draggable style={{
+          ...MODAL_BOX, maxWidth: 460, width: "92%",
+          border: "2px solid #d4af37",
+          boxShadow: "0 8px 40px rgba(0,0,0,0.6), 0 0 32px rgba(212,175,55,0.5)",
+        }}>
+          <div style={{ fontSize: 13, color: "#7a5500", fontWeight: 700, marginBottom: 4, letterSpacing: 0.5 }}>
+            ✦ SACRED RELIC FOUND ✦
+          </div>
+          <h2 style={{ margin: "0 0 10px 0", fontSize: 22 }}>🗝️ {item.name}</h2>
+          <p style={{ fontSize: 14, lineHeight: 1.6, marginBottom: 22, color: "#5a4317", fontStyle: "italic" }}>
+            The Sacred Master Key. Carry it to the pagoda and its gates open without trial —
+            your path to the final duel is assured.
+          </p>
+          <button style={BTN_PRIMARY} onClick={onClose}>Pick Up</button>
         </Draggable>
       </div>
     );
@@ -4568,10 +4643,159 @@ function StoryBeatModal({ title, body, onClose }) {
   );
 }
 
+// ---- PagodaGateModal -------------------------------------------------------
+// The Sacred Pagoda's gate: a multi-step wizard. Arrival (shared image + text) →
+// branch by state: hold the master key → admittance; three picklocks → transform
+// → admittance; otherwise the question wizard (answer all three, then a results
+// screen) — pass (≥ need correct) earns the key and admits, fail is rejected.
+// `need = hasKey ? 0 : 3 − picklocks`. Resolves via onResolve with
+// { outcome: "admitted"|"failed", earnedKey }.
+function PagodaGateImage({ src, glyph }) {
+  if (src) {
+    return (
+      <img src={src} alt="" style={{
+        width: "100%", maxHeight: 260, objectFit: "contain",
+        borderRadius: 10, marginBottom: 14,
+        border: "1px solid rgba(212,175,55,0.5)",
+      }} />
+    );
+  }
+  return <div aria-hidden style={{ fontSize: 64, margin: "8px 0 14px", color: "#d4af37" }}>{glyph}</div>;
+}
+
+function PagodaGateModal({ character, hasKey, picklocks = 0, onResolve }) {
+  const need = hasKey ? 0 : Math.max(0, 3 - picklocks);
+  const [questions] = useState(() => drawQuizQuestions(3));
+  // stages: "arrival" → "questions" → "results" → ("transform") → "admittance"
+  const [stage, setStage] = useState("arrival");
+  const [qIndex, setQIndex] = useState(0);
+  const [answers, setAnswers] = useState([null, null, null]);
+
+  const admissionImg = MODAL_IMAGES.pagoda.admission[character];
+  const box = {
+    ...MODAL_BOX, maxWidth: 560, width: "94%",
+    background: "#120d04", border: "2px solid #d4af37", color: "#f5e8c4",
+    textAlign: "center", maxHeight: "94vh", overflowY: "auto",
+  };
+  const wrap = (children) => (
+    <div style={{ ...MODAL_OVERLAY, zIndex: 1600 }}><Draggable style={box}>{children}</Draggable></div>
+  );
+
+  // --- Arrival ---
+  if (stage === "arrival") {
+    return wrap(<>
+      <div style={{ fontSize: 13, color: "#d4af37", fontWeight: 700, letterSpacing: 0.6, marginBottom: 4 }}>⛩ THE SACRED PAGODA</div>
+      <PagodaGateImage src={MODAL_IMAGES.pagoda.arrival} glyph="⛩" />
+      <p style={{ fontSize: 15, lineHeight: 1.6, color: "#e8dcb0", fontStyle: "italic", marginBottom: 22 }}>
+        You reach the Sacred Pagoda, last threshold before the final duel. None may pass
+        its gates unproven — show your worth, and the way beyond shall open.
+      </p>
+      <button style={BTN_PRIMARY} onClick={() => {
+        if (need === 0 && !hasKey) setStage("transform");       // three picklocks
+        else if (need === 0) setStage("admittance");            // holds the key
+        else setStage("questions");
+      }}>Enter</button>
+    </>);
+  }
+
+  // --- Transform (three picklocks → key) ---
+  if (stage === "transform") {
+    return wrap(<>
+      <div style={{ fontSize: 13, color: "#d4af37", fontWeight: 700, letterSpacing: 0.6, marginBottom: 4 }}>THE KEY IS FORGED</div>
+      <PagodaGateImage src={MODAL_IMAGES.pagoda.transform} glyph="🗝️" />
+      <p style={{ fontSize: 15, lineHeight: 1.6, color: "#e8dcb0", fontStyle: "italic", marginBottom: 22 }}>
+        Your three picklocks fuse in the pagoda's light and become the Sacred Master Key.
+      </p>
+      <button style={BTN_PRIMARY} onClick={() => setStage("admittance")}>Continue</button>
+    </>);
+  }
+
+  // --- Admittance ---
+  if (stage === "admittance") {
+    return wrap(<>
+      <div style={{ fontSize: 13, color: "#d4af37", fontWeight: 700, letterSpacing: 0.6, marginBottom: 4 }}>THE GATE OPENS</div>
+      <PagodaGateImage src={admissionImg} glyph="🗝️" />
+      <p style={{ fontSize: 15, lineHeight: 1.6, color: "#e8dcb0", fontStyle: "italic", marginBottom: 22 }}>
+        The Master Key turns, and the pagoda's inner gate swings wide. Your destiny awaits
+        at the path's end.
+      </p>
+      <button style={BTN_PRIMARY} onClick={() => onResolve({ outcome: "admitted", earnedKey: !hasKey })}>
+        Onward to the Duel
+      </button>
+    </>);
+  }
+
+  // --- Questions ---
+  if (stage === "questions") {
+    const q = questions[qIndex];
+    const chosen = answers[qIndex];
+    return wrap(<>
+      <div style={{ fontSize: 13, color: "#d4af37", fontWeight: 700, letterSpacing: 0.6, marginBottom: 8 }}>
+        THE PAGODA'S TRIAL — Question {qIndex + 1} of 3
+      </div>
+      <p style={{ fontSize: 17, lineHeight: 1.5, color: "#f5e8c4", marginBottom: 16 }}>{q.q}</p>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 20, textAlign: "left" }}>
+        {q.choices.map((c, i) => (
+          <button key={i} onClick={() => setAnswers((a) => a.map((v, j) => (j === qIndex ? i : v)))}
+            style={{
+              padding: "10px 14px", borderRadius: 8, fontSize: 15, cursor: "pointer",
+              fontFamily: "Georgia, serif", textAlign: "left",
+              background: chosen === i ? "#d4af37" : "#241706",
+              color: chosen === i ? "#241706" : "#f5e8c4",
+              border: `1px solid ${chosen === i ? "#d4af37" : "#7a5500"}`,
+              fontWeight: chosen === i ? 700 : 400,
+            }}>{c}</button>
+        ))}
+      </div>
+      <button style={{ ...BTN_PRIMARY, opacity: chosen == null ? 0.5 : 1, cursor: chosen == null ? "not-allowed" : "pointer" }}
+        disabled={chosen == null}
+        onClick={() => { if (qIndex < 2) setQIndex(qIndex + 1); else setStage("results"); }}>
+        {qIndex < 2 ? "Next" : "See Result"}
+      </button>
+    </>);
+  }
+
+  // --- Results ---
+  const correctCount = questions.reduce((n, q, i) => n + (answers[i] === q.answer ? 1 : 0), 0);
+  const passed = correctCount >= need;
+  return wrap(<>
+    <div style={{ fontSize: 13, color: passed ? "#8ee6a8" : "#e8a0a0", fontWeight: 700, letterSpacing: 0.6, marginBottom: 8 }}>
+      {passed ? "THE TRIAL IS PASSED" : "THE TRIAL IS FAILED"}
+    </div>
+    <div style={{ fontSize: 15, color: "#f5e8c4", marginBottom: 12 }}>
+      You answered <strong>{correctCount}</strong> of 3 correctly{need < 3 ? ` (you needed ${need})` : ""}.
+    </div>
+    <div style={{ textAlign: "left", marginBottom: 18 }}>
+      {questions.map((q, i) => {
+        const ok = answers[i] === q.answer;
+        return (
+          <div key={i} style={{ padding: "8px 0", borderTop: i ? "1px solid #3a2c10" : "none" }}>
+            <div style={{ fontSize: 13, color: "#e8dcb0", marginBottom: 3 }}>
+              <span style={{ color: ok ? "#8ee6a8" : "#e8a0a0", fontWeight: 700 }}>{ok ? "✓" : "✗"}</span> {q.q}
+            </div>
+            <div style={{ fontSize: 12.5, color: "#c4ad7b" }}>
+              Correct answer: <strong style={{ color: "#f5e8c4" }}>{q.choices[q.answer]}</strong> — {q.explain}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+    <p style={{ fontSize: 14, fontStyle: "italic", color: "#e8dcb0", marginBottom: 20 }}>
+      {passed
+        ? "The pagoda judges you worthy. The Master Key is yours, and the gate opens."
+        : "The pagoda turns you away. Gather your strength and return to try again."}
+    </p>
+    <button style={BTN_PRIMARY} onClick={() => (passed ? setStage("admittance") : onResolve({ outcome: "failed" }))}>
+      {passed ? "Receive the Key" : "Back to the Path"}
+    </button>
+  </>);
+}
+
 // Mid-game beats fire immediately at the moment they happen (Equator when the
 // chip reaches tile 33, Demon's Fall right after the fight), so the bookkeeping
 // is just "which kinds have fired" and a cap. Reset each new game.
 const EQUATOR_TILE = 33;   // reaching this tile crosses the halfway point
+const PAGODA_START = 61;   // tiles 61–63 are the Sacred Pagoda; entering fires the gate
 function freshBeatState() {
   return { shown: { equator: false, demon: false }, shownCount: 0 };
 }
@@ -4589,8 +4813,8 @@ export default function ShaolinGame() {
   const [modal, setModal] = useState(null); // null | { type, resolve, ...data }
   const [lastRoll, setLastRoll] = useState(null); // null | { value, character }
   const [gameWinner, setGameWinner] = useState(null); // null | "shaolin" | "ninja"
-  const [shaolinInventory, setShaolinInventory] = useState({ sorceries: [], extraPoses: [] });
-  const [ninjaInventory, setNinjaInventory] = useState({ sorceries: [], extraPoses: [] });
+  const [shaolinInventory, setShaolinInventory] = useState({ sorceries: [], extraPoses: [], masterKey: false, picklocks: 0 });
+  const [ninjaInventory, setNinjaInventory] = useState({ sorceries: [], extraPoses: [], masterKey: false, picklocks: 0 });
   const [shaolinDepleted, setShaolinDepleted] = useState(() => new Set());
   const [ninjaDepleted, setNinjaDepleted] = useState(() => new Set());
   const [shaolinBattleLog, setShaolinBattleLog] = useState([]); // [{ ninjaType, outcome }]
@@ -4654,8 +4878,8 @@ export default function ShaolinGame() {
   }, [skipNotice]);
 
   function resetPlayerProgress() {
-    setShaolinInventory({ sorceries: [], extraPoses: [] });
-    setNinjaInventory({ sorceries: [], extraPoses: [] });
+    setShaolinInventory({ sorceries: [], extraPoses: [], masterKey: false, picklocks: 0 });
+    setNinjaInventory({ sorceries: [], extraPoses: [], masterKey: false, picklocks: 0 });
     setShaolinDepleted(new Set());
     setNinjaDepleted(new Set());
     setShaolinBattleLog([]);
@@ -4752,6 +4976,26 @@ export default function ShaolinGame() {
     b.shownCount += 1;
     await showModal({ type: "story_beat", title: beat.title, body: beat.body });
     setModal(null);
+  }
+
+  // Run the Sacred Pagoda gate for `character`. Shows the wizard; on a passed
+  // trial the player earns the master key. Returns "admitted" | "failed".
+  async function runPagodaGate(character) {
+    const inv = character === "shaolin" ? shaolinInventory : ninjaInventory;
+    const result = await showModal({
+      type: "pagoda_gate",
+      character,
+      hasKey: inv.masterKey,
+      picklocks: inv.picklocks,
+    });
+    setModal(null);
+    if (result.outcome === "admitted" && result.earnedKey) {
+      const setInv = character === "shaolin" ? setShaolinInventory : setNinjaInventory;
+      // Passing the trial (or forging from picklocks) grants the key and clears
+      // any picklocks spent to complete it.
+      setInv((prev) => ({ ...prev, masterKey: true, picklocks: 0 }));
+    }
+    return result.outcome;
   }
 
   async function rollFor(character, opts = {}) {
@@ -5094,6 +5338,17 @@ export default function ShaolinGame() {
           return tile;
         }
         const inv = character === "shaolin" ? shaolinInventory : ninjaInventory;
+        const setInv = character === "shaolin" ? setShaolinInventory : setNinjaInventory;
+        const setDepleted = character === "shaolin" ? setShaolinDepleted : setNinjaDepleted;
+        // Master key — the uncommon shortcut past the pagoda trial. ~10% of
+        // finds, at most once per player.
+        if (!inv.masterKey && Math.random() < 0.10) {
+          await showModal({ type: "item", variant: "found", item: { kind: "master_key", id: "master_key", name: "Sacred Master Key" } });
+          setModal(null);
+          setInv((prev) => ({ ...prev, masterKey: true }));
+          setDepleted((prev) => { const n = new Set(prev); n.add(tile); return n; });
+          return tile;
+        }
         const heldSorceryIds = new Set(inv.sorceries.map((s) => s.id));
         const otherChar = character === "shaolin" ? "ninja" : "shaolin";
         const availableSorceries = SORCERIES.filter((s) => {
@@ -5124,8 +5379,6 @@ export default function ShaolinGame() {
         await showModal({ type: "item", variant: "found", item: picked });
         setModal(null);
 
-        const setInv = character === "shaolin" ? setShaolinInventory : setNinjaInventory;
-        const setDepleted = character === "shaolin" ? setShaolinDepleted : setNinjaDepleted;
         setInv((prev) => {
           if (picked.kind === "sorcery") {
             return { ...prev, sorceries: [...prev.sorceries, { id: picked.id, name: picked.name, description: picked.description }] };
@@ -5218,6 +5471,28 @@ export default function ShaolinGame() {
 
     // Direct movement via sorcery (Magic Compass / Ancient Key) — bypass dice.
     if (isDirect) {
+      // Sacred Pagoda gate — a sorcery that carries the chip into the pagoda
+      // (tiles 61+) still faces the gate. Fail → swept to tile 40 at 3x speed,
+      // whose event resolves; admitted → the direct move proceeds below.
+      if ((current || 0) < PAGODA_START && directTarget >= PAGODA_START) {
+        const outcome = await runPagodaGate(character);
+        if (outcome === "failed") {
+          let pos = current || 0;
+          while (pos > 40) { pos--; await sleep(Math.round(500 / 3)); setTile(pos); }
+          current = await resolveLanding(40);
+          if (trapState.shaolin.dirty) {
+            setShaolinUsedTrapTypes(trapState.shaolin.usedTypes);
+            setShaolinTrappedTiles(trapState.shaolin.triggered);
+          }
+          if (trapState.ninja.dirty) {
+            setNinjaUsedTrapTypes(trapState.ninja.usedTypes);
+            setNinjaTrappedTiles(trapState.ninja.triggered);
+          }
+          setIsRolling(false);
+          setCurrentTurn(character === "shaolin" ? "ninja" : "shaolin");
+          return;
+        }
+      }
       // Magic Compass animates step-by-step along the path; intermediate
       // tiles are walked over visually without firing any landing logic, and
       // the destination tile opens normally (item, fight, trap, hole, or
@@ -5356,6 +5631,20 @@ export default function ShaolinGame() {
       // before this tile's landing logic. If 33 is a pass-through step, movement
       // resumes on Continue; if it's the destination, its landing modal follows.
       if (next === EQUATOR_TILE) await showBeat("equator");
+
+      // Sacred Pagoda gate — the instant the chip crosses into the pagoda
+      // (tile 61). Admitted → movement continues to the duel tile; failed →
+      // swept back to tile 40 at 3x speed, whose event then resolves.
+      if (next === PAGODA_START) {
+        const outcome = await runPagodaGate(character);
+        if (outcome === "failed") {
+          let pos = next;
+          while (pos > 40) { pos--; await sleep(Math.round(500 / 3)); setTile(pos); }
+          current = await resolveLanding(40);
+          break;
+        }
+        // admitted → fall through and keep moving toward tile 64
+      }
 
       const isLastStep = i === steps - 1;
       const t = tiles[next].type;
@@ -5611,6 +5900,8 @@ export default function ShaolinGame() {
                 label="🥋 Shaolin Master"
                 sorceries={shaolinInventory.sorceries}
                 extraPoses={shaolinInventory.extraPoses}
+                masterKey={shaolinInventory.masterKey}
+                picklocks={shaolinInventory.picklocks}
                 held={shaolinHeld}
                 lockedType={shaolinLockedType}
                 headStart={shaolinHeadStart}
@@ -5629,6 +5920,8 @@ export default function ShaolinGame() {
                 label="🥷 Ninja Warrior"
                 sorceries={ninjaInventory.sorceries}
                 extraPoses={ninjaInventory.extraPoses}
+                masterKey={ninjaInventory.masterKey}
+                picklocks={ninjaInventory.picklocks}
                 held={ninjaHeld}
                 lockedType={ninjaLockedType}
                 headStart={ninjaHeadStart}
@@ -5859,6 +6152,14 @@ export default function ShaolinGame() {
           title={modal.title}
           body={modal.body}
           onClose={() => modal.resolve("ok")}
+        />
+      )}
+      {modal?.type === "pagoda_gate" && (
+        <PagodaGateModal
+          character={modal.character}
+          hasKey={modal.hasKey}
+          picklocks={modal.picklocks}
+          onResolve={(result) => modal.resolve(result)}
         />
       )}
       {boardReferenceChar && (
