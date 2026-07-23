@@ -157,7 +157,7 @@ Every generated board must satisfy all of the following:
 
 
 **Duel Approach Zone (tiles 60–63):**
-- Tiles 60–63 must all be normal tiles — no fights, no traps, no ladders, no holes. Once a player enters this zone, the path to the duel tile is clear.
+- Tiles 60–63 must all be normal tiles — no fights, no traps, no ladders, no holes. Tiles 61–63 are the **Sacred Pagoda** (see below); once a player is admitted, the path to the duel tile is clear.
 
 ### Reaching the Duel
 
@@ -611,7 +611,7 @@ A summary line at the top shows total wins and losses for each player, and the c
 - Enemy pose is shown face-down until reveal. Both poses displayed side by side after reveal.
 - Fight tiles display a small enemy-type icon visible before landing (colour-coded per ninja type). Item tiles display a neutral chest or scroll icon — contents are not shown. Trap tiles have no special marking and are visually indistinguishable from normal tiles.
 - Hole tiles render as an abyss — dark, irregular, visually breaking the path outline.
-- The player panel displays: board position, extra poses held, sorceries held, Combat Rating.
+- The player panel displays: board position, extra poses held, sorceries held, Combat Rating, and — once obtained — the Sacred Master Key and any picklocks.
 
 ---
 
