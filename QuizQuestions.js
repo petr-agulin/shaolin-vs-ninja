@@ -15,7 +15,7 @@
 export const KIDS_QUESTIONS = [
   { q: "What is the capital city of France?", choices: ["Lyon", "Paris", "Nice", "Marseille"], answer: 1, explain: "Paris is the capital of France." },
   { q: "What is the name of the galaxy we live in?", choices: ["Andromeda", "Milky Way", "Whirlpool", "Pinwheel"], answer: 1, explain: "Our galaxy is the Milky Way." },
-  { q: "Which is the closest star to Earth?", choices: ["The Moon", "The Sun", "Polaris", "Alpha Centauri"], answer: 1, explain: "The Sun is the closest star to Earth." },
+  { q: "Which planet is the second from the Sun?", choices: ["Mercury", "Venus", "Earth", "Mars"], answer: 1, explain: "Venus is the second planet from the Sun." },
   { q: "What gas do plants release during photosynthesis?", choices: ["Carbon dioxide", "Oxygen", "Nitrogen", "Hydrogen"], answer: 1, explain: "Plants take in carbon dioxide and give out oxygen." },
   { q: "Which is the only mammal capable of true flight?", choices: ["Flying squirrel", "Bat", "Sugar glider", "Owl"], answer: 1, explain: "Bats are the only mammals that can truly fly." },
   { q: "What do you call a group of lions?", choices: ["Herd", "Pack", "Pride", "Flock"], answer: 2, explain: "A group of lions is called a pride." },
