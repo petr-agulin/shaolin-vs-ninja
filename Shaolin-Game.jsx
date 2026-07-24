@@ -4663,13 +4663,39 @@ function PagodaGateImage({ src, glyph }) {
   return <div aria-hidden style={{ fontSize: 64, margin: "8px 0 14px", color: "#d4af37" }}>{glyph}</div>;
 }
 
-function PagodaGateModal({ character, hasKey, picklocks = 0, onResolve }) {
+function PagodaGateModal({ character, hasKey, picklocks = 0, quizMode = "kids", onQuizModeChange = () => {}, onResolve }) {
   const need = hasKey ? 0 : Math.max(0, 3 - picklocks);
-  const [questions] = useState(() => drawQuizQuestions(3));
+  const [mode, setMode] = useState(quizMode);
+  const [questions, setQuestions] = useState(() => drawQuizQuestions(3, quizMode));
   // stages: "arrival" → "questions" → "results" → ("transform") → "admittance"
   const [stage, setStage] = useState("arrival");
   const [qIndex, setQIndex] = useState(0);
   const [answers, setAnswers] = useState([null, null, null]);
+
+  // Kids/Adults difficulty. Switching re-draws fresh questions of that band and
+  // resets the trial; the choice persists to the game for next time.
+  function switchMode(m) {
+    if (m === mode) return;
+    setMode(m);
+    setQuestions(drawQuizQuestions(3, m));
+    setQIndex(0);
+    setAnswers([null, null, null]);
+    onQuizModeChange(m);
+  }
+  const modeToggle = (
+    <div style={{ display: "flex", gap: 6, justifyContent: "center", alignItems: "center", marginBottom: 12 }}>
+      <span style={{ fontSize: 11, color: "#8a7a55", marginRight: 2 }}>Questions:</span>
+      {[["kids", "🧒 Kids"], ["adults", "🧑 Adults"]].map(([m, label]) => (
+        <button key={m} onClick={() => switchMode(m)} style={{
+          padding: "4px 12px", borderRadius: 14, fontSize: 12, fontWeight: 700, cursor: "pointer",
+          fontFamily: "Georgia, serif",
+          background: mode === m ? "#d4af37" : "transparent",
+          color: mode === m ? "#241706" : "#c4ad7b",
+          border: `1px solid ${mode === m ? "#d4af37" : "#7a5500"}`,
+        }}>{label}</button>
+      ))}
+    </div>
+  );
 
   const admissionImg = MODAL_IMAGES.pagoda.admission[character];
   const box = {
@@ -4686,10 +4712,11 @@ function PagodaGateModal({ character, hasKey, picklocks = 0, onResolve }) {
     return wrap(<>
       <div style={{ fontSize: 13, color: "#d4af37", fontWeight: 700, letterSpacing: 0.6, marginBottom: 4 }}>⛩ THE SACRED PAGODA</div>
       <PagodaGateImage src={MODAL_IMAGES.pagoda.arrival} glyph="⛩" />
-      <p style={{ fontSize: 15, lineHeight: 1.6, color: "#e8dcb0", fontStyle: "italic", marginBottom: 22 }}>
+      <p style={{ fontSize: 15, lineHeight: 1.6, color: "#e8dcb0", fontStyle: "italic", marginBottom: 18 }}>
         You reach the Sacred Pagoda, last threshold before the final duel. None may pass
         its gates unproven — show your worth, and the way beyond shall open.
       </p>
+      {need >= 1 && modeToggle}
       <button style={BTN_PRIMARY} onClick={() => {
         if (need === 0 && !hasKey) setStage("transform");       // three picklocks
         else if (need === 0) setStage("admittance");            // holds the key
@@ -4730,6 +4757,7 @@ function PagodaGateModal({ character, hasKey, picklocks = 0, onResolve }) {
     const q = questions[qIndex];
     const chosen = answers[qIndex];
     return wrap(<>
+      {modeToggle}
       <div style={{ fontSize: 13, color: "#d4af37", fontWeight: 700, letterSpacing: 0.6, marginBottom: 8 }}>
         THE PAGODA'S TRIAL — Question {qIndex + 1} of 3
       </div>
@@ -4806,6 +4834,7 @@ export default function ShaolinGame() {
   const [ninjaTile, setNinjaTile] = useState(null);
   const [currentTurn, setCurrentTurn] = useState(null); // null | "any" | "shaolin" | "ninja"
   const beatRef = useRef(freshBeatState());
+  const [quizMode, setQuizMode] = useState("kids"); // pagoda question difficulty: "kids" | "adults"
   // Board-level "How fights work" reference: holds the character whose techniques
   // to show, or null when closed.
   const [boardReferenceChar, setBoardReferenceChar] = useState(null);
@@ -6174,6 +6203,8 @@ export default function ShaolinGame() {
           character={modal.character}
           hasKey={modal.hasKey}
           picklocks={modal.picklocks}
+          quizMode={quizMode}
+          onQuizModeChange={setQuizMode}
           onResolve={(result) => modal.resolve(result)}
         />
       )}
