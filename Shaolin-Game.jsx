@@ -4650,14 +4650,29 @@ function StoryBeatModal({ title, body, onClose }) {
 // screen) — pass (≥ need correct) earns the key and admits, fail is rejected.
 // `need = hasKey ? 0 : 3 − picklocks`. Resolves via onResolve with
 // { outcome: "admitted"|"failed", earnedKey }.
+// Full-bleed hero image for the pagoda gate. Bleeds to the modal's gold border
+// (cancels MODAL_BOX's 28/32px padding) and fills any letterbox gap with a
+// blurred, darkened copy of the same image instead of flat black — giving a
+// large, immersive picture with no black sides.
 function PagodaGateImage({ src, glyph }) {
   if (src) {
     return (
-      <img src={src} alt="" style={{
-        width: "100%", maxHeight: 260, objectFit: "contain",
-        borderRadius: 10, marginBottom: 14,
-        border: "1px solid rgba(212,175,55,0.5)",
-      }} />
+      <div style={{
+        position: "relative", overflow: "hidden",
+        margin: "-28px -32px 18px", height: 340,
+        background: "#0c0802",
+        borderBottom: "1px solid rgba(212,175,55,0.5)",
+      }}>
+        <img src={src} aria-hidden style={{
+          position: "absolute", inset: -24,
+          width: "calc(100% + 48px)", height: "calc(100% + 48px)",
+          objectFit: "cover", filter: "blur(20px) brightness(0.45)",
+        }} />
+        <img src={src} alt="" style={{
+          position: "relative", display: "block",
+          width: "100%", height: "100%", objectFit: "contain",
+        }} />
+      </div>
     );
   }
   return <div aria-hidden style={{ fontSize: 64, margin: "8px 0 14px", color: "#d4af37" }}>{glyph}</div>;
@@ -4671,6 +4686,19 @@ function PagodaGateModal({ character, hasKey, picklocks = 0, quizMode = "kids", 
   const [stage, setStage] = useState("arrival");
   const [qIndex, setQIndex] = useState(0);
   const [answers, setAnswers] = useState([null, null, null]);
+
+  // Lock background scroll while the gate is open so no page scrollbar shows
+  // behind the modal and breaks the dramatic feel.
+  useEffect(() => {
+    const prevBody = document.body.style.overflow;
+    const prevHtml = document.documentElement.style.overflow;
+    document.body.style.overflow = "hidden";
+    document.documentElement.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prevBody;
+      document.documentElement.style.overflow = prevHtml;
+    };
+  }, []);
 
   // Kids/Adults difficulty. Switching re-draws fresh questions of that band and
   // resets the trial; the choice persists to the game for next time.
@@ -4699,9 +4727,9 @@ function PagodaGateModal({ character, hasKey, picklocks = 0, quizMode = "kids", 
 
   const admissionImg = MODAL_IMAGES.pagoda.admission[character];
   const box = {
-    ...MODAL_BOX, maxWidth: 560, width: "94%",
+    ...MODAL_BOX, maxWidth: 600, width: "94%",
     background: "#120d04", border: "2px solid #d4af37", color: "#f5e8c4",
-    textAlign: "center", maxHeight: "94vh", overflowY: "auto",
+    textAlign: "center", maxHeight: "94vh", overflowY: "auto", overflowX: "hidden",
   };
   const wrap = (children) => (
     <div style={{ ...MODAL_OVERLAY, zIndex: 1600 }}><Draggable style={box}>{children}</Draggable></div>
@@ -4710,13 +4738,12 @@ function PagodaGateModal({ character, hasKey, picklocks = 0, quizMode = "kids", 
   // --- Arrival ---
   if (stage === "arrival") {
     return wrap(<>
-      <div style={{ fontSize: 13, color: "#d4af37", fontWeight: 700, letterSpacing: 0.6, marginBottom: 4 }}>⛩ THE SACRED PAGODA</div>
       <PagodaGateImage src={MODAL_IMAGES.pagoda.arrival} glyph="⛩" />
+      <div style={{ fontSize: 13, color: "#d4af37", fontWeight: 700, letterSpacing: 0.6, marginBottom: 8 }}>⛩ THE SACRED PAGODA</div>
       <p style={{ fontSize: 15, lineHeight: 1.6, color: "#e8dcb0", fontStyle: "italic", marginBottom: 18 }}>
         You reach the Sacred Pagoda, last threshold before the final duel. None may pass
         its gates unproven — show your worth, and the way beyond shall open.
       </p>
-      {need >= 1 && modeToggle}
       <button style={BTN_PRIMARY} onClick={() => {
         if (need === 0 && !hasKey) setStage("transform");       // three picklocks
         else if (need === 0) setStage("admittance");            // holds the key
@@ -4728,8 +4755,8 @@ function PagodaGateModal({ character, hasKey, picklocks = 0, quizMode = "kids", 
   // --- Transform (three picklocks → key) ---
   if (stage === "transform") {
     return wrap(<>
-      <div style={{ fontSize: 13, color: "#d4af37", fontWeight: 700, letterSpacing: 0.6, marginBottom: 4 }}>THE KEY IS FORGED</div>
       <PagodaGateImage src={MODAL_IMAGES.pagoda.transform} glyph="🗝️" />
+      <div style={{ fontSize: 13, color: "#d4af37", fontWeight: 700, letterSpacing: 0.6, marginBottom: 8 }}>THE KEY IS FORGED</div>
       <p style={{ fontSize: 15, lineHeight: 1.6, color: "#e8dcb0", fontStyle: "italic", marginBottom: 22 }}>
         Your three picklocks fuse in the pagoda's light and become the Sacred Master Key.
       </p>
@@ -4740,8 +4767,8 @@ function PagodaGateModal({ character, hasKey, picklocks = 0, quizMode = "kids", 
   // --- Admittance ---
   if (stage === "admittance") {
     return wrap(<>
-      <div style={{ fontSize: 13, color: "#d4af37", fontWeight: 700, letterSpacing: 0.6, marginBottom: 4 }}>THE GATE OPENS</div>
       <PagodaGateImage src={admissionImg} glyph="🗝️" />
+      <div style={{ fontSize: 13, color: "#d4af37", fontWeight: 700, letterSpacing: 0.6, marginBottom: 8 }}>THE GATE OPENS</div>
       <p style={{ fontSize: 15, lineHeight: 1.6, color: "#e8dcb0", fontStyle: "italic", marginBottom: 22 }}>
         The Master Key turns, and the pagoda's inner gate swings wide. Your destiny awaits
         at the path's end.
