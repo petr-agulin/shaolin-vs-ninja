@@ -4650,23 +4650,25 @@ function StoryBeatModal({ title, body, onClose }) {
 // screen) — pass (≥ need correct) earns the key and admits, fail is rejected.
 // `need = hasKey ? 0 : 3 − picklocks`. Resolves via onResolve with
 // { outcome: "admitted"|"failed", earnedKey }.
-// Full-bleed hero image for the pagoda gate. Bleeds to the modal's gold border
-// (cancels MODAL_BOX's 28/32px padding) and fills any letterbox gap with a
-// blurred, darkened copy of the same image instead of flat black — giving a
-// large, immersive picture with no black sides.
-function PagodaGateImage({ src, glyph }) {
+// Framed picture for the pagoda gate, styled to match the start screen's hero
+// image: a gold-bordered, rounded frame sitting inside the card padding. The
+// source art is portrait (3:4), so a blurred, darkened copy of the same image
+// fills the frame behind the sharp (contained) copy — a large picture that
+// fills the frame with no black sides.
+function PagodaGateImage({ src, glyph, height = 420 }) {
   if (src) {
     return (
       <div style={{
-        position: "relative", overflow: "hidden",
-        margin: "-28px -32px 18px", height: 340,
+        position: "relative", width: "100%", height,
+        marginBottom: 22, overflow: "hidden",
+        border: "1px solid #d4af37", borderRadius: 10,
+        boxShadow: "0 0 12px rgba(212,175,55,0.18)",
         background: "#0c0802",
-        borderBottom: "1px solid rgba(212,175,55,0.5)",
       }}>
         <img src={src} aria-hidden style={{
           position: "absolute", inset: -24,
           width: "calc(100% + 48px)", height: "calc(100% + 48px)",
-          objectFit: "cover", filter: "blur(20px) brightness(0.45)",
+          objectFit: "cover", filter: "blur(22px) brightness(0.5)",
         }} />
         <img src={src} alt="" style={{
           position: "relative", display: "block",
@@ -4727,24 +4729,35 @@ function PagodaGateModal({ character, hasKey, picklocks = 0, quizMode = "kids", 
 
   const admissionImg = MODAL_IMAGES.pagoda.admission[character];
   const box = {
-    ...MODAL_BOX, maxWidth: 600, width: "94%",
-    background: "#120d04", border: "2px solid #d4af37", color: "#f5e8c4",
+    ...MODAL_BOX, maxWidth: 720, width: "94%",
+    background: "#1a1008", border: "2px solid #d4af37", color: "#f5e8c4",
+    padding: "28px 32px 32px 32px",
     textAlign: "center", maxHeight: "94vh", overflowY: "auto", overflowX: "hidden",
   };
   const wrap = (children) => (
     <div style={{ ...MODAL_OVERLAY, zIndex: 1600 }}><Draggable style={box}>{children}</Draggable></div>
   );
 
-  // --- Arrival ---
+  // --- Arrival --- (mirrors the start screen: title, subtitle, hero picture,
+  // story panel, single primary action)
   if (stage === "arrival") {
     return wrap(<>
+      <h1 style={{ margin: "0 0 6px 0", fontSize: 26, letterSpacing: 1.2, color: "#d4af37" }}>
+        ⛩ The Sacred Pagoda
+      </h1>
+      <div style={{ fontSize: 13, color: "#c4ad7b", fontStyle: "italic", marginBottom: 18 }}>
+        The final threshold upon the sacred path.
+      </div>
       <PagodaGateImage src={MODAL_IMAGES.pagoda.arrival} glyph="⛩" />
-      <div style={{ fontSize: 13, color: "#d4af37", fontWeight: 700, letterSpacing: 0.6, marginBottom: 8 }}>⛩ THE SACRED PAGODA</div>
-      <p style={{ fontSize: 15, lineHeight: 1.6, color: "#e8dcb0", fontStyle: "italic", marginBottom: 18 }}>
+      <div style={{
+        textAlign: "center", padding: "16px 18px", marginBottom: 24,
+        background: "rgba(245,232,196,0.05)", border: "1px solid rgba(212,175,55,0.45)",
+        borderRadius: 8, color: "#e8dcb0", fontSize: 14.5, lineHeight: 1.65, fontStyle: "italic",
+      }}>
         You reach the Sacred Pagoda, last threshold before the final duel. None may pass
         its gates unproven — show your worth, and the way beyond shall open.
-      </p>
-      <button style={BTN_PRIMARY} onClick={() => {
+      </div>
+      <button style={{ ...BTN_PRIMARY, background: "#d4af37", color: "#1a1008", fontSize: 15, padding: "12px 28px" }} onClick={() => {
         if (need === 0 && !hasKey) setStage("transform");       // three picklocks
         else if (need === 0) setStage("admittance");            // holds the key
         else setStage("questions");
@@ -4755,25 +4768,25 @@ function PagodaGateModal({ character, hasKey, picklocks = 0, quizMode = "kids", 
   // --- Transform (three picklocks → key) ---
   if (stage === "transform") {
     return wrap(<>
+      <div style={{ fontSize: 15, color: "#d4af37", fontWeight: 700, letterSpacing: 0.8, marginBottom: 14 }}>THE KEY IS FORGED</div>
       <PagodaGateImage src={MODAL_IMAGES.pagoda.transform} glyph="🗝️" />
-      <div style={{ fontSize: 13, color: "#d4af37", fontWeight: 700, letterSpacing: 0.6, marginBottom: 8 }}>THE KEY IS FORGED</div>
       <p style={{ fontSize: 15, lineHeight: 1.6, color: "#e8dcb0", fontStyle: "italic", marginBottom: 22 }}>
         Your three picklocks fuse in the pagoda's light and become the Sacred Master Key.
       </p>
-      <button style={BTN_PRIMARY} onClick={() => setStage("admittance")}>Continue</button>
+      <button style={{ ...BTN_PRIMARY, background: "#d4af37", color: "#1a1008", fontSize: 15, padding: "12px 28px" }} onClick={() => setStage("admittance")}>Continue</button>
     </>);
   }
 
   // --- Admittance ---
   if (stage === "admittance") {
     return wrap(<>
+      <div style={{ fontSize: 15, color: "#d4af37", fontWeight: 700, letterSpacing: 0.8, marginBottom: 14 }}>THE GATE OPENS</div>
       <PagodaGateImage src={admissionImg} glyph="🗝️" />
-      <div style={{ fontSize: 13, color: "#d4af37", fontWeight: 700, letterSpacing: 0.6, marginBottom: 8 }}>THE GATE OPENS</div>
       <p style={{ fontSize: 15, lineHeight: 1.6, color: "#e8dcb0", fontStyle: "italic", marginBottom: 22 }}>
         The Master Key turns, and the pagoda's inner gate swings wide. Your destiny awaits
         at the path's end.
       </p>
-      <button style={BTN_PRIMARY} onClick={() => onResolve({ outcome: "admitted", earnedKey: !hasKey })}>
+      <button style={{ ...BTN_PRIMARY, background: "#d4af37", color: "#1a1008", fontSize: 15, padding: "12px 28px" }} onClick={() => onResolve({ outcome: "admitted", earnedKey: !hasKey })}>
         Onward to the Duel
       </button>
     </>);
