@@ -5111,6 +5111,21 @@ export default function ShaolinGame() {
     async function resolveLanding(tile, opts = {}) {
       const t = tiles[tile];
 
+      // Sacred Pagoda gate — any arrival AT a pagoda tile (a hole fall, a ladder
+      // climb, or a direct-sorcery landing) faces the gate. Normal step entries
+      // are gated in the move loop at tile 61 and never reach here for a pagoda
+      // tile. Admitted → stay; failed → swept back to tile 40 at 3x, whose event
+      // resolves.
+      if (tile >= PAGODA_START && tile < 64) {
+        const outcome = await runPagodaGate(character);
+        if (outcome === "failed") {
+          let pos = tile;
+          while (pos > 40) { pos--; await sleep(Math.round(500 / 3)); setTile(pos); }
+          return await resolveLanding(40);
+        }
+        return tile; // admitted — pagoda tiles have no other landing event
+      }
+
       if (t.type === T.HOLE) {
         await sleep(400);
         // Safety Rope: offered before the fall executes. The for-loop sets
@@ -5471,10 +5486,10 @@ export default function ShaolinGame() {
 
     // Direct movement via sorcery (Magic Compass / Ancient Key) — bypass dice.
     if (isDirect) {
-      // Sacred Pagoda gate — a sorcery that carries the chip into the pagoda
-      // (tiles 61+) still faces the gate. Fail → swept to tile 40 at 3x speed,
-      // whose event resolves; admitted → the direct move proceeds below.
-      if ((current || 0) < PAGODA_START && directTarget >= PAGODA_START) {
+      // Sacred Pagoda gate for a direct sorcery that jumps straight to the duel
+      // tile (≥ 64), which bypasses resolveLanding. Direct landings that stop
+      // inside the pagoda (61–63) are gated by resolveLanding instead.
+      if ((current || 0) < PAGODA_START && directTarget >= 64) {
         const outcome = await runPagodaGate(character);
         if (outcome === "failed") {
           let pos = current || 0;
