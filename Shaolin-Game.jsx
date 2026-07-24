@@ -2450,9 +2450,10 @@ function TrapTributeModal({ item, given, onClose }) {
   // equivalent, so name it explicitly — otherwise the swap reads as a bug.
   const translated = given && given.id !== item.id ? given : null;
   const isSorcery = item.kind === "sorcery";
-  const itemIcon = isSorcery ? (SORCERY_ICONS[item.id] || "🔮") : "✦";
-  const extraImg = !isSorcery ? EXTRA_POSE_IMAGES[item.id] : null;
-  const extraTone = !isSorcery ? EXTRA_POSE_BG_BY_HEIGHT[item.height] : null;
+  const isPicklock = item.kind === "picklock";
+  const itemIcon = isPicklock ? "🪝" : isSorcery ? (SORCERY_ICONS[item.id] || "🔮") : "✦";
+  const extraImg = (!isSorcery && !isPicklock) ? EXTRA_POSE_IMAGES[item.id] : null;
+  const extraTone = (!isSorcery && !isPicklock) ? EXTRA_POSE_BG_BY_HEIGHT[item.height] : null;
   return (
     <div style={MODAL_OVERLAY}>
       <Draggable style={{
@@ -2507,7 +2508,9 @@ function TrapTributeModal({ item, given, onClose }) {
           <div style={{ textAlign: "left" }}>
             <div style={{ fontSize: 14, fontWeight: 700, color: PALETTE.text }}>{item.name}</div>
             <div style={{ fontSize: 11, color: "#6b4f1a", marginTop: 2 }}>
-              {isSorcery
+              {isPicklock
+                ? "Picklock — a fragment toward the Master Key"
+                : isSorcery
                 ? "Sorcery"
                 : `Secret Technique — ${item.type} / ${item.height}`}
             </div>
@@ -2788,6 +2791,30 @@ function ItemModal({ variant, item, onClose }) {
           <p style={{ fontSize: 14, lineHeight: 1.6, marginBottom: 22, color: "#5a4317", fontStyle: "italic" }}>
             The Sacred Master Key. Carry it to the pagoda and its gates open without trial —
             your path to the final duel is assured.
+          </p>
+          <button style={BTN_PRIMARY} onClick={onClose}>Pick Up</button>
+        </Draggable>
+      </div>
+    );
+  }
+  if (item.kind === "picklock") {
+    const count = item.count || 1;
+    return (
+      <div style={MODAL_OVERLAY}>
+        <Draggable style={{
+          ...MODAL_BOX, maxWidth: 440, width: "92%",
+          border: "2px solid #d4af37",
+          boxShadow: "0 8px 40px rgba(0,0,0,0.6), 0 0 28px rgba(212,175,55,0.4)",
+        }}>
+          <div style={{ fontSize: 13, color: "#7a5500", fontWeight: 700, marginBottom: 4, letterSpacing: 0.5 }}>
+            ✦ A PICKLOCK FOUND ✦
+          </div>
+          <div style={{ fontSize: 40, marginBottom: 8 }}>🪝</div>
+          <h2 style={{ margin: "0 0 10px 0", fontSize: 21 }}>Picklock ({count}/3)</h2>
+          <p style={{ fontSize: 14, lineHeight: 1.6, marginBottom: 22, color: "#5a4317", fontStyle: "italic" }}>
+            {count >= 3
+              ? "Three picklocks! At the Sacred Pagoda they fuse into the Master Key — the gate will open without trial."
+              : "A fragment on the way to the Master Key. Gather three and the pagoda's gate opens without trial."}
           </p>
           <button style={BTN_PRIMARY} onClick={onClose}>Pick Up</button>
         </Draggable>
@@ -4889,6 +4916,12 @@ function PagodaGateModal({ character, hasKey, picklocks = 0, quizMode = "kids", 
 // is just "which kinds have fired" and a cap. Reset each new game.
 const EQUATOR_TILE = 33;   // reaching this tile crosses the halfway point
 const PAGODA_START = 61;   // tiles 61–63 are the Sacred Pagoda; entering fires the gate
+// Phase B — picklock grants. A qualifying misfortune (a hole fall, a Setback
+// trap) or triumph (a Demon Ninja defeat) has a chance to yield ONE picklock,
+// but only while the player holds fewer than 3 and no master key. Picklocks are
+// forged into the key only at the pagoda gate. Tuned so a player usually reaches
+// the pagoda with 1–2 (the 3-question trial stays the main path).
+const PICKLOCK_CHANCE = { hole: 0.80, setback: 0.65, demon: 0.85 };
 function freshBeatState() {
   return { shown: { equator: false, demon: false }, shownCount: 0 };
 }
@@ -5128,10 +5161,14 @@ export default function ShaolinGame() {
       shaolin: {
         sorceries: [...shaolinInventory.sorceries],
         extraPoses: [...shaolinInventory.extraPoses],
+        picklocks: shaolinInventory.picklocks,
+        masterKey: shaolinInventory.masterKey,
       },
       ninja: {
         sorceries: [...ninjaInventory.sorceries],
         extraPoses: [...ninjaInventory.extraPoses],
+        picklocks: ninjaInventory.picklocks,
+        masterKey: ninjaInventory.masterKey,
       },
     };
     function holdsSorcery(char, id) {
@@ -5156,7 +5193,13 @@ export default function ShaolinGame() {
       const rival = char === "shaolin" ? "ninja" : "shaolin";
       const sorcs = invMirror[char].sorceries.map((s) => ({ kind: "sorcery", ...s }));
       const extras = invMirror[char].extraPoses.map((p) => ({ kind: "extra_pose", ...p }));
-      return [...sorcs, ...extras].filter((it) => !rivalAlreadyHas(rival, it));
+      const pool = [...sorcs, ...extras].filter((it) => !rivalAlreadyHas(rival, it));
+      // A picklock is transferable only when the rival can actually use one
+      // (fewer than 3 and no master key) — picklocks never simply vanish.
+      if (invMirror[char].picklocks > 0 && invMirror[rival].picklocks < 3 && !invMirror[rival].masterKey) {
+        pool.push({ kind: "picklock", id: "picklock", name: "Picklock" });
+      }
+      return pool;
     }
     function hasItemsToSteal(char) {
       // True if the landing player has at least one thing that can actually
@@ -5172,6 +5215,16 @@ export default function ShaolinGame() {
     // character-exclusive items, which translate into the receiver's own
     // version (see TRIBUTE_COUNTERPART).
     function transferItem(fromChar, toChar, taken) {
+      // Picklocks are a fungible count, not a distinct object — move one across.
+      if (taken.kind === "picklock") {
+        invMirror[fromChar].picklocks = Math.max(0, invMirror[fromChar].picklocks - 1);
+        invMirror[toChar].picklocks = Math.min(3, invMirror[toChar].picklocks + 1);
+        const setFrom = fromChar === "shaolin" ? setShaolinInventory : setNinjaInventory;
+        const setTo = toChar === "shaolin" ? setShaolinInventory : setNinjaInventory;
+        setFrom((prev) => ({ ...prev, picklocks: Math.max(0, prev.picklocks - 1) }));
+        setTo((prev) => ({ ...prev, picklocks: Math.min(3, prev.picklocks + 1) }));
+        return taken; // no counterpart translation for picklocks
+      }
       const given = tributeItemFor(taken);
       // Mutate both local mirrors to keep cascades consistent.
       if (taken.kind === "sorcery") {
@@ -5197,6 +5250,19 @@ export default function ShaolinGame() {
         return { ...prev, extraPoses: [...prev.extraPoses, { id: given.id, name: given.name, type: given.type, height: given.height }] };
       });
       return given;
+    }
+    // Phase B — a qualifying event may grant one picklock. No-op once the player
+    // holds the key or already has three (state-based, so a picklock lost to
+    // Rival's Tribute can be earned again later).
+    async function maybeGrantPicklock(char, chance) {
+      const m = invMirror[char];
+      if (m.masterKey || m.picklocks >= 3) return;
+      if (Math.random() >= chance) return;
+      m.picklocks = Math.min(3, m.picklocks + 1);
+      const setInv = char === "shaolin" ? setShaolinInventory : setNinjaInventory;
+      setInv((prev) => ({ ...prev, picklocks: Math.min(3, prev.picklocks + 1) }));
+      await showModal({ type: "item", variant: "found", item: { kind: "picklock", id: "picklock", name: "Picklock", count: m.picklocks } });
+      setModal(null);
     }
 
     // Resolves the landing event on `tile` (chip is already shown there).
@@ -5252,6 +5318,8 @@ export default function ShaolinGame() {
         }
         setTile(t.dest);
         await sleep(200);
+        // A fall is one of the ways a picklock turns up (Phase B).
+        await maybeGrantPicklock(character, PICKLOCK_CHANCE.hole);
         // Trigger the destination tile's normal landing event (item, fight,
         // trap, etc.). Hole landings can never themselves be holes by board
         // rules, so this won't recurse into another fall.
@@ -5310,7 +5378,7 @@ export default function ShaolinGame() {
             setback: "You would be swept 2–4 tiles backward.",
             battle_log_modifier: "Your greatest recent victory would be erased from history.",
             pose_lock: "All three stances of one type would be sealed for your next battle.",
-            rivals_tribute: "One of your sorceries or extra poses would be torn away and given to your rival.",
+            rivals_tribute: "One of your treasures — a sorcery, an extra pose, or a picklock — would be torn away and given to your rival.",
           };
           const info = TRAP_INFO[trapType] || {};
           const use = await showModal({
@@ -5382,6 +5450,8 @@ export default function ShaolinGame() {
             await sleep(500);
             setTile(pos);
           }
+          // Small consolation for being driven backward: a chance at a picklock.
+          await maybeGrantPicklock(character, PICKLOCK_CHANCE.setback);
           // Apply normal landing logic on the final tile (could trigger another event).
           return await resolveLanding(pos);
         }
@@ -5450,11 +5520,15 @@ export default function ShaolinGame() {
         const setInv = character === "shaolin" ? setShaolinInventory : setNinjaInventory;
         const setDepleted = character === "shaolin" ? setShaolinDepleted : setNinjaDepleted;
         // Master key — the uncommon shortcut past the pagoda trial. ~10% of
-        // finds, at most once per player.
-        if (!inv.masterKey && Math.random() < 0.10) {
+        // finds, at most once per player. Suppressed once the player already
+        // holds three picklocks (a key at the gate is then assured — redundant).
+        if (!invMirror[character].masterKey && invMirror[character].picklocks < 3 && Math.random() < 0.10) {
           await showModal({ type: "item", variant: "found", item: { kind: "master_key", id: "master_key", name: "Sacred Master Key" } });
           setModal(null);
-          setInv((prev) => ({ ...prev, masterKey: true }));
+          // The key makes any picklocks moot — clear them.
+          invMirror[character].masterKey = true;
+          invMirror[character].picklocks = 0;
+          setInv((prev) => ({ ...prev, masterKey: true, picklocks: 0 }));
           setDepleted((prev) => { const n = new Set(prev); n.add(tile); return n; });
           return tile;
         }
@@ -5559,7 +5633,11 @@ export default function ShaolinGame() {
         ]);
         // "Demon's Fall" beat — immediately after the fight modals resolve, on
         // the first demon victory (a win, so no setback follows).
-        if (outcome === "won" && ninjaType === "demon") await showBeat("demon");
+        if (outcome === "won" && ninjaType === "demon") {
+          await showBeat("demon");
+          // Slaying the Demon can yield a picklock (Phase B) — a rare reward.
+          await maybeGrantPicklock(character, PICKLOCK_CHANCE.demon);
+        }
         if (outcome === "lost") {
           const setback = NINJA_SETBACK[ninjaType];
           const target = Math.max(1, tile - setback);
