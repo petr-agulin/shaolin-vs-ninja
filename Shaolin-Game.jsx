@@ -4683,11 +4683,24 @@ function PagodaGateImage({ src, glyph, height = 420 }) {
 function PagodaGateModal({ character, hasKey, picklocks = 0, quizMode = "kids", onQuizModeChange = () => {}, onResolve }) {
   const need = hasKey ? 0 : Math.max(0, 3 - picklocks);
   const [mode, setMode] = useState(quizMode);
-  const [questions, setQuestions] = useState(() => drawQuizQuestions(3, quizMode));
+  // Both bands are drawn once and remembered, so toggling on the first question
+  // shows the same three questions each time (never a fresh redraw). Answers are
+  // likewise kept per band. `locked` is set the moment the player advances past
+  // question 1 — from then on the band is fixed and the toggle is disabled.
+  const [questionsByMode] = useState(() => ({
+    kids: drawQuizQuestions(3, "kids"),
+    adults: drawQuizQuestions(3, "adults"),
+  }));
+  const [answersByMode, setAnswersByMode] = useState({
+    kids: [null, null, null],
+    adults: [null, null, null],
+  });
+  const [locked, setLocked] = useState(false);
+  const questions = questionsByMode[mode];
+  const answers = answersByMode[mode];
   // stages: "arrival" → "questions" → "results" → ("transform") → "admittance"
   const [stage, setStage] = useState("arrival");
   const [qIndex, setQIndex] = useState(0);
-  const [answers, setAnswers] = useState([null, null, null]);
 
   // Lock background scroll while the gate is open so no page scrollbar shows
   // behind the modal and breaks the dramatic feel.
@@ -4702,28 +4715,31 @@ function PagodaGateModal({ character, hasKey, picklocks = 0, quizMode = "kids", 
     };
   }, []);
 
-  // Kids/Adults difficulty. Switching re-draws fresh questions of that band and
-  // resets the trial; the choice persists to the game for next time.
+  // Kids/Adults difficulty. Only switchable while on question 1 (before locking);
+  // it just swaps to the other band's remembered questions/answers. The choice
+  // persists to the game for next time.
   function switchMode(m) {
-    if (m === mode) return;
+    if (m === mode || locked) return;
     setMode(m);
-    setQuestions(drawQuizQuestions(3, m));
-    setQIndex(0);
-    setAnswers([null, null, null]);
     onQuizModeChange(m);
   }
   const modeToggle = (
     <div style={{ display: "flex", gap: 6, justifyContent: "center", alignItems: "center", marginBottom: 12 }}>
       <span style={{ fontSize: 11, color: "#8a7a55", marginRight: 2 }}>Questions:</span>
-      {[["kids", "🧒 Kids"], ["adults", "🧑 Adults"]].map(([m, label]) => (
-        <button key={m} onClick={() => switchMode(m)} style={{
-          padding: "4px 12px", borderRadius: 14, fontSize: 12, fontWeight: 700, cursor: "pointer",
-          fontFamily: "Georgia, serif",
-          background: mode === m ? "#d4af37" : "transparent",
-          color: mode === m ? "#241706" : "#c4ad7b",
-          border: `1px solid ${mode === m ? "#d4af37" : "#7a5500"}`,
-        }}>{label}</button>
-      ))}
+      {[["kids", "🧒 Kids"], ["adults", "🧑 Adults"]].map(([m, label]) => {
+        const active = mode === m;
+        return (
+          <button key={m} onClick={() => switchMode(m)} disabled={locked} title={locked ? "Locked in for this trial" : undefined} style={{
+            padding: "4px 12px", borderRadius: 14, fontSize: 12, fontWeight: 700,
+            cursor: locked ? "default" : "pointer",
+            fontFamily: "Georgia, serif",
+            background: active ? "#d4af37" : "transparent",
+            color: active ? "#241706" : "#c4ad7b",
+            border: `1px solid ${active ? "#d4af37" : "#7a5500"}`,
+            opacity: locked && !active ? 0.35 : 1,
+          }}>{label}</button>
+        );
+      })}
     </div>
   );
 
@@ -4805,7 +4821,7 @@ function PagodaGateModal({ character, hasKey, picklocks = 0, quizMode = "kids", 
         <p style={{ fontSize: 19, lineHeight: 1.5, color: "#f5e8c4", marginBottom: 22 }}>{q.q}</p>
         <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 26, textAlign: "left" }}>
           {q.choices.map((c, i) => (
-            <button key={i} onClick={() => setAnswers((a) => a.map((v, j) => (j === qIndex ? i : v)))}
+            <button key={i} onClick={() => setAnswersByMode((prev) => ({ ...prev, [mode]: prev[mode].map((v, j) => (j === qIndex ? i : v)) }))}
               style={{
                 padding: "13px 16px", borderRadius: 8, fontSize: 15, cursor: "pointer",
                 fontFamily: "Georgia, serif", textAlign: "left",
@@ -4818,7 +4834,12 @@ function PagodaGateModal({ character, hasKey, picklocks = 0, quizMode = "kids", 
         </div>
         <button style={{ ...BTN_PRIMARY, background: "#d4af37", color: "#1a1008", fontSize: 15, padding: "12px 28px", alignSelf: "center", opacity: chosen == null ? 0.5 : 1, cursor: chosen == null ? "not-allowed" : "pointer" }}
           disabled={chosen == null}
-          onClick={() => { if (qIndex < 2) setQIndex(qIndex + 1); else setStage("results"); }}>
+          onClick={() => {
+            setLocked(true);                 // band is fixed once you leave Q1
+            onQuizModeChange(mode);
+            if (qIndex < 2) setQIndex(qIndex + 1);
+            else setStage("results");
+          }}>
           {qIndex < 2 ? "Next" : "See Result"}
         </button>
       </div>
