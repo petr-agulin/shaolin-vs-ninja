@@ -4798,65 +4798,69 @@ function PagodaGateModal({ character, hasKey, picklocks = 0, quizMode = "kids", 
     const chosen = answers[qIndex];
     return wrap(<>
       {modeToggle}
-      <div style={{ fontSize: 13, color: "#d4af37", fontWeight: 700, letterSpacing: 0.6, marginBottom: 8 }}>
-        THE PAGODA'S TRIAL — Question {qIndex + 1} of 3
+      <div style={{ display: "flex", flexDirection: "column", justifyContent: "center", minHeight: 480 }}>
+        <div style={{ fontSize: 14, color: "#d4af37", fontWeight: 700, letterSpacing: 0.6, marginBottom: 14 }}>
+          THE PAGODA'S TRIAL — Question {qIndex + 1} of 3
+        </div>
+        <p style={{ fontSize: 19, lineHeight: 1.5, color: "#f5e8c4", marginBottom: 22 }}>{q.q}</p>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 26, textAlign: "left" }}>
+          {q.choices.map((c, i) => (
+            <button key={i} onClick={() => setAnswers((a) => a.map((v, j) => (j === qIndex ? i : v)))}
+              style={{
+                padding: "13px 16px", borderRadius: 8, fontSize: 15, cursor: "pointer",
+                fontFamily: "Georgia, serif", textAlign: "left",
+                background: chosen === i ? "#d4af37" : "#241706",
+                color: chosen === i ? "#241706" : "#f5e8c4",
+                border: `1px solid ${chosen === i ? "#d4af37" : "#7a5500"}`,
+                fontWeight: chosen === i ? 700 : 400,
+              }}>{c}</button>
+          ))}
+        </div>
+        <button style={{ ...BTN_PRIMARY, background: "#d4af37", color: "#1a1008", fontSize: 15, padding: "12px 28px", alignSelf: "center", opacity: chosen == null ? 0.5 : 1, cursor: chosen == null ? "not-allowed" : "pointer" }}
+          disabled={chosen == null}
+          onClick={() => { if (qIndex < 2) setQIndex(qIndex + 1); else setStage("results"); }}>
+          {qIndex < 2 ? "Next" : "See Result"}
+        </button>
       </div>
-      <p style={{ fontSize: 17, lineHeight: 1.5, color: "#f5e8c4", marginBottom: 16 }}>{q.q}</p>
-      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 20, textAlign: "left" }}>
-        {q.choices.map((c, i) => (
-          <button key={i} onClick={() => setAnswers((a) => a.map((v, j) => (j === qIndex ? i : v)))}
-            style={{
-              padding: "10px 14px", borderRadius: 8, fontSize: 15, cursor: "pointer",
-              fontFamily: "Georgia, serif", textAlign: "left",
-              background: chosen === i ? "#d4af37" : "#241706",
-              color: chosen === i ? "#241706" : "#f5e8c4",
-              border: `1px solid ${chosen === i ? "#d4af37" : "#7a5500"}`,
-              fontWeight: chosen === i ? 700 : 400,
-            }}>{c}</button>
-        ))}
-      </div>
-      <button style={{ ...BTN_PRIMARY, opacity: chosen == null ? 0.5 : 1, cursor: chosen == null ? "not-allowed" : "pointer" }}
-        disabled={chosen == null}
-        onClick={() => { if (qIndex < 2) setQIndex(qIndex + 1); else setStage("results"); }}>
-        {qIndex < 2 ? "Next" : "See Result"}
-      </button>
     </>);
   }
 
   // --- Results ---
   const correctCount = questions.reduce((n, q, i) => n + (answers[i] === q.answer ? 1 : 0), 0);
   const passed = correctCount >= need;
-  return wrap(<>
-    <div style={{ fontSize: 13, color: passed ? "#8ee6a8" : "#e8a0a0", fontWeight: 700, letterSpacing: 0.6, marginBottom: 8 }}>
-      {passed ? "THE TRIAL IS PASSED" : "THE TRIAL IS FAILED"}
-    </div>
-    <div style={{ fontSize: 15, color: "#f5e8c4", marginBottom: 12 }}>
-      You answered <strong>{correctCount}</strong> of 3 correctly{need < 3 ? ` (you needed ${need})` : ""}.
-    </div>
-    <div style={{ textAlign: "left", marginBottom: 18 }}>
-      {questions.map((q, i) => {
-        const ok = answers[i] === q.answer;
-        return (
-          <div key={i} style={{ padding: "8px 0", borderTop: i ? "1px solid #3a2c10" : "none" }}>
-            <div style={{ fontSize: 13, color: "#e8dcb0", marginBottom: 3 }}>
-              <span style={{ color: ok ? "#8ee6a8" : "#e8a0a0", fontWeight: 700 }}>{ok ? "✓" : "✗"}</span> {q.q}
+  return wrap(
+    <div style={{ display: "flex", flexDirection: "column", justifyContent: "center", minHeight: 480 }}>
+      <div style={{ fontSize: 15, color: passed ? "#8ee6a8" : "#e8a0a0", fontWeight: 700, letterSpacing: 0.6, marginBottom: 10 }}>
+        {passed ? "THE TRIAL IS PASSED" : "THE TRIAL IS FAILED"}
+      </div>
+      <div style={{ fontSize: 15, color: "#f5e8c4", marginBottom: 14 }}>
+        You answered <strong>{correctCount}</strong> of 3 correctly{need < 3 ? ` (you needed ${need})` : ""}.
+      </div>
+      <div style={{ textAlign: "left", marginBottom: 20 }}>
+        {questions.map((q, i) => {
+          const ok = answers[i] === q.answer;
+          return (
+            <div key={i} style={{ padding: "10px 0", borderTop: i ? "1px solid #3a2c10" : "none" }}>
+              <div style={{ fontSize: 13.5, color: "#e8dcb0", marginBottom: 3 }}>
+                <span style={{ color: ok ? "#8ee6a8" : "#e8a0a0", fontWeight: 700 }}>{ok ? "✓" : "✗"}</span> {q.q}
+              </div>
+              <div style={{ fontSize: 12.5, color: "#c4ad7b" }}>
+                Correct answer: <strong style={{ color: "#f5e8c4" }}>{q.choices[q.answer]}</strong> — {q.explain}
+              </div>
             </div>
-            <div style={{ fontSize: 12.5, color: "#c4ad7b" }}>
-              Correct answer: <strong style={{ color: "#f5e8c4" }}>{q.choices[q.answer]}</strong> — {q.explain}
-            </div>
-          </div>
-        );
-      })}
+          );
+        })}
+      </div>
+      <p style={{ fontSize: 14, fontStyle: "italic", color: "#e8dcb0", marginBottom: 22 }}>
+        {passed
+          ? "The pagoda judges you worthy. The Master Key is yours, and the gate opens."
+          : "The pagoda turns you away. Gather your strength and return to try again."}
+      </p>
+      <button style={{ ...BTN_PRIMARY, background: "#d4af37", color: "#1a1008", fontSize: 15, padding: "12px 28px", alignSelf: "center" }} onClick={() => (passed ? setStage("admittance") : onResolve({ outcome: "failed" }))}>
+        {passed ? "Receive the Key" : "Back to the Path"}
+      </button>
     </div>
-    <p style={{ fontSize: 14, fontStyle: "italic", color: "#e8dcb0", marginBottom: 20 }}>
-      {passed
-        ? "The pagoda judges you worthy. The Master Key is yours, and the gate opens."
-        : "The pagoda turns you away. Gather your strength and return to try again."}
-    </p>
-    <button style={BTN_PRIMARY} onClick={() => (passed ? setStage("admittance") : onResolve({ outcome: "failed" }))}>
-      {passed ? "Receive the Key" : "Back to the Path"}
-    </button>
-  </>);
+  );
 }
 
 // Mid-game beats fire immediately at the moment they happen (Equator when the
