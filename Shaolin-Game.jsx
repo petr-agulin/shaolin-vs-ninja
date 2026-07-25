@@ -172,6 +172,19 @@ const TRAP = {
 
 const ALL_TRAP_TYPES = ["hold", "sorcery_theft", "pose_theft", "setback", "battle_log_modifier", "pose_lock", "rivals_tribute"];
 
+// Number of live trap tiles on the board at any moment. The board's spacing
+// rules (a trap may not sit within 2 of a fight, and there are 12 fights) cap
+// how many spaced traps fit, so counts above ~6 stop adding encounters.
+const TRAP_COUNT = 6;
+// Roaming traps: when a trap springs, it relocates to a fresh eligible tile, so
+// the danger set slides across the whole game — no tile stays permanently safe
+// or trapped, and backtracking is never risk-free. Set false for fixed traps.
+const TRAPS_ROAM = true;
+// Whether the board draws the dashed TRAP marker. Kept true for development and
+// testing; flip to false for the final "hidden traps" pass, after which trap
+// tiles are indistinguishable from ordinary ones.
+const SHOW_TRAP_MARKERS = true;
+
 const TRAP_INFO = {
   hold: {
     icon: "⛓️",
@@ -398,8 +411,10 @@ function placeHoles(tiles) {
 }
 
 function placeTraps(tiles, reserved) {
-  // 5 traps total. At generation we randomly pick 5 trap types from the pool
-  // of 7 (ALL_TRAP_TYPES) and assign one to each placed tile. Eligible 6..59.
+  // TRAP_COUNT traps total. At generation we randomly pick that many trap types
+  // from the pool of 7 (ALL_TRAP_TYPES) and assign one to each placed tile — the
+  // per-tile type is only for the dev panel; the live type is drawn per-player
+  // at landing time and, with roaming, the tiles themselves slide. Eligible 6..59.
   // No within 2 of fight or hole. No two trap tiles adjacent.
   // Skips tiles reserved as hole landing points (must remain normal).
   // Must come AFTER the first item tile — i.e. no trap may precede the first
@@ -431,8 +446,8 @@ function placeTraps(tiles, reserved) {
     return result;
   }
 
-  // Random sample of 5 trap types from the 7 available, each appearing once.
-  const selectedTypes = shuffle(ALL_TRAP_TYPES).slice(0, 5);
+  // Random sample of TRAP_COUNT trap types from the 7 available, each once.
+  const selectedTypes = shuffle(ALL_TRAP_TYPES).slice(0, TRAP_COUNT);
   const placed = [];
   for (const trapType of selectedTypes) {
     const cand = eligibleFor(placed);
@@ -442,6 +457,50 @@ function placeTraps(tiles, reserved) {
     tiles[t] = { num: t, type: T.TRAP, trap: trapType };
   }
   return true;
+}
+
+// The tile numbers a freshly generated board marks as traps — the starting
+// (and, without roaming, permanent) live-trap set.
+function trapsFromBoard(b) {
+  const s = new Set();
+  for (let i = 1; i <= 64; i++) if (b.tiles[i].type === T.TRAP) s.add(i);
+  return s;
+}
+
+// Where a sprung trap may relocate to. Mirrors placeTraps' rules against the
+// live-trap set (not the board's original TRAP tiles): tiles 6..59, after the
+// first item, a plain tile (a normal tile or one a trap has since vacated),
+// never within 2 of a fight/hole, never a hole landing spot, and never adjacent
+// to a current live trap. `exclude` holds tiles to skip (e.g. the springer's).
+function eligibleTrapTiles(tiles, liveTraps, exclude) {
+  const fights = [];
+  const holes = [];
+  const holeDests = new Set();
+  let firstItem = Infinity;
+  for (let i = 1; i <= 64; i++) {
+    const t = tiles[i];
+    if (t.type === T.FIGHT) fights.push(i);
+    if (t.type === T.HOLE) { holes.push(i); if (t.dest != null) holeDests.add(t.dest); }
+    if (t.type === T.ITEM && i < firstItem) firstItem = i;
+  }
+  const out = [];
+  for (let i = 6; i <= 59; i++) {
+    if (i < firstItem) continue;
+    if (liveTraps.has(i)) continue;
+    const ty = tiles[i].type;
+    if (ty !== T.NORMAL && ty !== T.TRAP) continue; // normal or vacated-trap only
+    if (holeDests.has(i)) continue;
+    if (exclude && exclude.has(i)) continue;
+    let bad = false;
+    for (const f of fights) if (Math.abs(f - i) <= 2) { bad = true; break; }
+    if (bad) continue;
+    for (const h of holes) if (Math.abs(h - i) <= 2) { bad = true; break; }
+    if (bad) continue;
+    for (const p of liveTraps) if (Math.abs(p - i) <= 1) { bad = true; break; }
+    if (bad) continue;
+    out.push(i);
+  }
+  return out;
 }
 
 function placeLadders(tiles, holeReserved) {
@@ -645,10 +704,10 @@ function validateBoard(tiles) {
   for (let r = 0; r < ROWS; r++) {
     if (!itemRows.has(r)) return false;
   }
-  // Trap count must be 5.
+  // Trap count must be TRAP_COUNT.
   let trapCount = 0;
   for (let i = 1; i <= 64; i++) if (tiles[i].type === T.TRAP) trapCount++;
-  if (trapCount !== 5) return false;
+  if (trapCount !== TRAP_COUNT) return false;
   return true;
 }
 
@@ -754,11 +813,14 @@ function CenteredLabel({ cx, cy, text, fill, size = 11, weight = 700, dy = 0 }) 
   );
 }
 
-function TileRect({ tile }) {
+function TileRect({ tile, liveTraps }) {
   // Renders one tile as a rounded rectangle with type-specific styling.
   // Hole tiles handled separately as <Abyss>.
   const { x, y, cx, cy } = tilePos(tile.num);
   const n = tile.num;
+  // Trap status comes from the live (roaming) set, not the board's original
+  // TRAP tiles: a trap may have slid onto a plain tile, or off its origin.
+  const isTrap = liveTraps ? liveTraps.has(n) : tile.type === T.TRAP;
 
   if (tile.type === T.HOLE) return null;
 
@@ -822,9 +884,10 @@ function TileRect({ tile }) {
     );
   }
 
-  if (tile.type === T.TRAP) {
-    // Dev-only visibility. The actual trap type is drawn per-player at landing time,
-    // so we no longer show a fixed sub-label here.
+  if (isTrap && SHOW_TRAP_MARKERS) {
+    // Dev/testing visibility. The actual trap type is drawn per-player at
+    // landing time, so no fixed sub-label. When SHOW_TRAP_MARKERS is off (the
+    // final "hidden traps" pass) this tile falls through to a plain rendering.
     return (
       <g>
         <rect x={x} y={y} width={TILE} height={TILE} rx={6}
@@ -1070,7 +1133,7 @@ function PathArrows({ tiles }) {
 // BOARD COMPONENT
 // =============================================================================
 
-function Board({ tiles, shaolinTile, ninjaTile, gameStarted }) {
+function Board({ tiles, shaolinTile, ninjaTile, gameStarted, liveTraps }) {
   const ladderLinks = useMemo(() => {
     const links = [];
     const seen = new Set();
@@ -1124,7 +1187,7 @@ function Board({ tiles, shaolinTile, ninjaTile, gameStarted }) {
 
       {/* Tiles */}
       {Array.from({ length: 64 }, (_, i) => i + 1).map((n) => (
-        <TileRect key={n} tile={tiles[n]} />
+        <TileRect key={n} tile={tiles[n]} liveTraps={liveTraps} />
       ))}
 
       {/* Holes drawn after tiles so abyss visually breaks the road */}
@@ -1198,7 +1261,7 @@ function InfoPanel({ tiles, attempts, onRegenerate, isRolling }) {
         {row("Fight", s.counts.fight, 12)}
         {row("Item", s.counts.item, 10)}
         {row("Ladder", s.counts.ladder, 6)}
-        {row("Trap", s.counts.trap, 4)}
+        {row("Trap", s.counts.trap, TRAP_COUNT)}
         {row("Hole", s.counts.hole, 3)}
         {row("Boss", s.counts.boss, 1)}
       </div>
@@ -4928,10 +4991,17 @@ function freshBeatState() {
 
 export default function ShaolinGame() {
   const [board, setBoard] = useState(() => generateBoard());
+  // Live (roaming) trap positions. Seeded from the board's TRAP tiles and reset
+  // each game; a sprung trap slides to a new tile here (the board stays fixed).
+  const [trapTiles, setTrapTiles] = useState(() => trapsFromBoard(board));
   const [shaolinTile, setShaolinTile] = useState(null);
   const [ninjaTile, setNinjaTile] = useState(null);
   const [currentTurn, setCurrentTurn] = useState(null); // null | "any" | "shaolin" | "ninja"
   const beatRef = useRef(freshBeatState());
+  // Holes that have already offered each player a picklock. A hole rolls its
+  // picklock chance at most once per player — on the first fall through it —
+  // so a hole can't be farmed for repeats by looping back (e.g. via a ladder).
+  const pickHoleRef = useRef({ shaolin: new Set(), ninja: new Set() });
   const [quizMode, setQuizMode] = useState("kids"); // pagoda question difficulty: "kids" | "adults"
   // Board-level "How fights work" reference: holds the character whose techniques
   // to show, or null when closed.
@@ -5023,6 +5093,7 @@ export default function ShaolinGame() {
     setNinjaTrappedTiles(new Set());
     setSkipNotice(null);
     beatRef.current = freshBeatState();
+    pickHoleRef.current = { shaolin: new Set(), ninja: new Set() };
   }
 
   function startGame() {
@@ -5032,12 +5103,15 @@ export default function ShaolinGame() {
     setCurrentTurn("any");
     setLastRoll(null);
     setGameWinner(null);
+    setTrapTiles(trapsFromBoard(board)); // restore this board's original traps
     resetPlayerProgress();
   }
 
   function regenerate() {
     if (isRolling) return;
-    setBoard(generateBoard());
+    const nb = generateBoard();
+    setBoard(nb);
+    setTrapTiles(trapsFromBoard(nb));
     setShaolinTile(null);
     setNinjaTile(null);
     setCurrentTurn(null);
@@ -5138,6 +5212,12 @@ export default function ShaolinGame() {
     }
     const setTile = character === "shaolin" ? setShaolinTile : setNinjaTile;
     let current = character === "shaolin" ? shaolinTile : ninjaTile;
+
+    // Live roaming-trap mirror. Snapshot at entry and mutate locally so a
+    // cascade within this move (e.g. a setback that lands on another trap) sees
+    // relocations immediately; each relocation also commits to state so the
+    // board marker slides right away.
+    const liveTraps = new Set(trapTiles);
 
     // Per-player trap-state mirrors. We snapshot at rollFor entry and mutate
     // locally so cascades (setback → another trap) see the up-to-date state.
@@ -5318,8 +5398,15 @@ export default function ShaolinGame() {
         }
         setTile(t.dest);
         await sleep(200);
-        // A fall is one of the ways a picklock turns up (Phase B).
-        await maybeGrantPicklock(character, PICKLOCK_CHANCE.hole);
+        // A fall is one of the ways a picklock turns up (Phase B), but each
+        // hole offers it only on the player's FIRST fall through it — marked
+        // whether or not it grants — so re-entering the same hole (e.g. via an
+        // upward ladder loop) can never farm more picklocks.
+        const pickedHoles = pickHoleRef.current[character];
+        if (!pickedHoles.has(tile)) {
+          pickedHoles.add(tile);
+          await maybeGrantPicklock(character, PICKLOCK_CHANCE.hole);
+        }
         // Trigger the destination tile's normal landing event (item, fight,
         // trap, etc.). Hole landings can never themselves be holes by board
         // rules, so this won't recurse into another fall.
@@ -5344,12 +5431,13 @@ export default function ShaolinGame() {
         return tile;
       }
 
-      if (t.type === T.TRAP) {
+      if (liveTraps.has(tile)) {
         // Trap type is decided PER PLAYER at landing time, drawn from that
-        // player's personal shuffled deck. Tile.trap is ignored intentionally.
+        // player's personal shuffled deck. The board's per-tile type is ignored.
         const playerTrap = trapState[character];
-        if (playerTrap.triggered.has(tile)) {
-          // Already sprung for this player — silent pass-through.
+        if (!TRAPS_ROAM && playerTrap.triggered.has(tile)) {
+          // Fixed-trap mode only: already sprung here for this player — silent.
+          // With roaming, a sprung trap relocates, so there is no repeat tile.
           return tile;
         }
         // Build the live pool: every trap type minus those this player has
@@ -5368,6 +5456,18 @@ export default function ShaolinGame() {
         playerTrap.usedTypes.add(trapType);
         playerTrap.triggered.add(tile);
         playerTrap.dirty = true;
+
+        // Roaming: the trap slides off this tile to a fresh eligible one, so the
+        // danger set drifts and this tile is now safe. Done on every spring
+        // (including a Sixth-Sense block below — the trap still moved), keeping
+        // the live-trap count steady. Mirror the change locally (for cascades in
+        // this move) and commit so the board marker relocates immediately.
+        if (TRAPS_ROAM) {
+          const cand = eligibleTrapTiles(tiles, liveTraps, new Set([tile]));
+          liveTraps.delete(tile);
+          if (cand.length) liveTraps.add(cand[Math.floor(Math.random() * cand.length)]);
+          setTrapTiles(new Set(liveTraps));
+        }
 
         // Sixth Sense: reveal the trap and offer to block before any effect runs.
         if (holdsSorcery(character, "sixth_sense")) {
@@ -6020,6 +6120,7 @@ export default function ShaolinGame() {
             shaolinTile={shaolinTile}
             ninjaTile={ninjaTile}
             gameStarted={gameStarted}
+            liveTraps={trapTiles}
           />
         </div>
 

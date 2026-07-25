@@ -48,7 +48,7 @@ The path follows a standard snake pattern: left to right on odd rows, right to l
 - 12 fight tiles
 - 12 item tiles (at list one item tile per "board row")
 - 6 ladder tiles (2 forward, 2 backward, 2 two-way)
-- 5 trap tiles (one per trap type)
+- 6 trap tiles (the danger set slides during play — see Trap Types)
 - 3 hole tiles (forward skip 1 row)
 - 1 duel tile (tile 64)
 
@@ -69,7 +69,9 @@ Holes are gaps in the path. You fall through and land further ahead — skipping
 
 ### Trap Types
 
-Traps are hidden tile events with negative effects. A trap tile looks identical to a normal tile until landed on. When triggered, a modal announces the trap and resolves the effect before the turn ends. Seven trap types are defined. Each game, 5 are randomly selected at board generation and assigned to the 5 trap tiles — each selected type appears exactly once. No sorcery can be used to avoid a trap in advance.
+Traps are hidden tile events with negative effects. A trap tile looks identical to a normal tile until landed on. When triggered, a modal announces the trap and resolves the effect before the turn ends. Seven trap types are defined. No sorcery can be used to avoid a trap in advance.
+
+There are six live trap tiles at any time, but **traps are not fixed to their tiles**. The moment a trap springs, it slides away: the tile it was on becomes safe, and the danger reappears on a fresh tile elsewhere on the board. So a tile that trapped you can be harmless when you return to it, and a tile that was safe can become dangerous — you can never learn the board's traps by heart. The type a trap deals is decided per player at the moment it springs, and **each player suffers any given trap type at most once per game**, so no player is hit by the same kind of trap twice.
 
 **Hold**
 The player loses their next turn. A visible indicator appears on their panel as a reminder. At the start of what would be their next turn, the hold resolves automatically and play passes on. If both players are simultaneously held, both skip a turn and the hold clears.
@@ -149,7 +151,7 @@ Every generated board must satisfy all of the following:
 - At least one item tile or normal tile must exist between a hole's origin and its destination (so the skip always costs something).
 
 **Traps:**
-- At board generation, 5 trap types are randomly selected from the pool of 7 types: Hold, Sorcery Theft, Pose Theft, Setback, Battle Log Modifier, Pose Lock, and Rival's Tribute.
+- At board generation, 6 trap types are randomly selected from the pool of 7 types: Hold, Sorcery Theft, Pose Theft, Setback, Battle Log Modifier, Pose Lock, and Rival's Tribute. (During play the tiles slide, and the live type is drawn per player on landing; this initial per-tile assignment only seeds the board.)
 - No trap tile within 5 tiles of the start.
 - No trap tile within 2 tiles of a fight tile or a hole tile.
 - No two trap tiles adjacent to each other.
@@ -180,7 +182,7 @@ Because the trial is always available, admission can always be earned; the pagod
 
 **The Sacred Master Key** is obtained three ways: found as an uncommon item during the board phase, forged from **three picklocks** when the holder reaches the pagoda, or earned by passing the pagoda's trial. It is kept for the session and **cannot be lost** to any trap.
 
-**Picklocks** turn up by luck at dramatic moments — falling into a hole, being driven back by the Setback trap, or defeating the Demon Ninja — never on ordinary item tiles. A player may hold up to three. They are **not** combined on the board; the third is forged into the Master Key only when the player reaches the pagoda. A picklock cannot be taken by Sorcery Theft (it never simply vanishes), but one can be handed to the opponent by Rival's Tribute — and only if that opponent can still use it (they hold fewer than three and no key). A picklock lost this way can be earned again later.
+**Picklocks** turn up by luck at dramatic moments — falling into a hole, being driven back by the Setback trap, or defeating the Demon Ninja — never on ordinary item tiles. Each of these is a once-only chance: a given hole offers a picklock only on a player's first fall through it, so the same hole can't be milked for more by looping back to it. A player may hold up to three. They are **not** combined on the board; the third is forged into the Master Key only when the player reaches the pagoda. A picklock cannot be taken by Sorcery Theft (it never simply vanishes), but one can be handed to the opponent by Rival's Tribute — and only if that opponent can still use it (they hold fewer than three and no key). A picklock lost this way can be earned again later.
 
 ---
 
@@ -208,6 +210,7 @@ Because the trial is always available, admission can always be earned; the pagod
 
 - Trap tiles look identical to normal tiles before landing. The player has no advance warning.
 - When the chip lands on a trap tile, the modal announces the trap type and resolves the effect immediately.
+- After a trap springs it relocates: that tile becomes safe and a new trap tile appears elsewhere (never on a fight, hole, item, ladder, or pagoda tile, and never right beside another trap). The board therefore always holds six live traps, but which tiles they are drifts throughout the game. Re-landing on a tile you already sprung does nothing — the danger has moved on.
 
 ---
 
