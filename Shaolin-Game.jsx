@@ -180,6 +180,13 @@ const TRAP_COUNT = 6;
 // the danger set slides across the whole game — no tile stays permanently safe
 // or trapped, and backtracking is never risk-free. Set false for fixed traps.
 const TRAPS_ROAM = true;
+// How strongly a relocating trap prefers a tile AHEAD of the player who sprung
+// it (toward the goal) over any eligible tile. A player marches into the tiles
+// ahead of them, so a forward slide keeps the trap a live threat instead of
+// stranding it behind on already-passed tiles; the remaining fraction lands
+// anywhere, preserving surprise and threatening a trailing opponent. 0 = no
+// bias (uniform), 1 = always ahead when a tile ahead is available.
+const TRAP_FORWARD_BIAS = 0.8;
 // Whether the board draws the dashed TRAP marker. Kept true for development and
 // testing; flip to false for the final "hidden traps" pass, after which trap
 // tiles are indistinguishable from ordinary ones.
@@ -4979,12 +4986,15 @@ function PagodaGateModal({ character, hasKey, picklocks = 0, quizMode = "kids", 
 // is just "which kinds have fired" and a cap. Reset each new game.
 const EQUATOR_TILE = 33;   // reaching this tile crosses the halfway point
 const PAGODA_START = 61;   // tiles 61–63 are the Sacred Pagoda; entering fires the gate
-// Phase B — picklock grants. A qualifying misfortune (a hole fall, a Setback
-// trap) or triumph (a Demon Ninja defeat) has a chance to yield ONE picklock,
-// but only while the player holds fewer than 3 and no master key. Picklocks are
-// forged into the key only at the pagoda gate. Tuned so a player usually reaches
-// the pagoda with 1–2 (the 3-question trial stays the main path).
-const PICKLOCK_CHANCE = { hole: 0.80, setback: 0.65, demon: 0.85 };
+// Picklocks are found opportunistically: once per turn, regardless of what the
+// turn contained (a plain move, a fight, a trap, a fall, an item find, nothing),
+// each player has this flat chance to stumble on ONE picklock — a sudden, random
+// treasure not tied to any tile or event. It only fires while the player holds
+// fewer than 3 and no master key; picklocks are forged into the key at the
+// pagoda gate. Tuned so players usually reach the pagoda with 1–2 (forging from
+// three is a realistic alternate path, but the 3-question trial stays common).
+// One roll per turn makes it inherently un-farmable (turns simply alternate).
+const PICKLOCK_FIND_CHANCE = 0.08;
 function freshBeatState() {
   return { shown: { equator: false, demon: false }, shownCount: 0 };
 }
@@ -4998,10 +5008,6 @@ export default function ShaolinGame() {
   const [ninjaTile, setNinjaTile] = useState(null);
   const [currentTurn, setCurrentTurn] = useState(null); // null | "any" | "shaolin" | "ninja"
   const beatRef = useRef(freshBeatState());
-  // Holes that have already offered each player a picklock. A hole rolls its
-  // picklock chance at most once per player — on the first fall through it —
-  // so a hole can't be farmed for repeats by looping back (e.g. via a ladder).
-  const pickHoleRef = useRef({ shaolin: new Set(), ninja: new Set() });
   const [quizMode, setQuizMode] = useState("kids"); // pagoda question difficulty: "kids" | "adults"
   // Board-level "How fights work" reference: holds the character whose techniques
   // to show, or null when closed.
@@ -5093,7 +5099,6 @@ export default function ShaolinGame() {
     setNinjaTrappedTiles(new Set());
     setSkipNotice(null);
     beatRef.current = freshBeatState();
-    pickHoleRef.current = { shaolin: new Set(), ninja: new Set() };
   }
 
   function startGame() {
@@ -5181,20 +5186,27 @@ export default function ShaolinGame() {
 
   // Run the Sacred Pagoda gate for `character`. Shows the wizard; on a passed
   // trial the player earns the master key. Returns "admitted" | "failed".
-  async function runPagodaGate(character) {
-    const inv = character === "shaolin" ? shaolinInventory : ninjaInventory;
+  // `liveInv` is the caller's invMirror slice — the up-to-date key/picklock
+  // count. It must NOT be read from React state (shaolinInventory/…): that value
+  // is frozen for the whole turn, so a picklock found earlier in the same move
+  // (e.g. during the very fall that lands on a pagoda tile) would be missed and
+  // the trial would demand one question too many.
+  async function runPagodaGate(character, liveInv) {
     const result = await showModal({
       type: "pagoda_gate",
       character,
-      hasKey: inv.masterKey,
-      picklocks: inv.picklocks,
+      hasKey: liveInv.masterKey,
+      picklocks: liveInv.picklocks,
     });
     setModal(null);
     if (result.outcome === "admitted" && result.earnedKey) {
       const setInv = character === "shaolin" ? setShaolinInventory : setNinjaInventory;
       // Passing the trial (or forging from picklocks) grants the key and clears
-      // any picklocks spent to complete it.
+      // any picklocks spent to complete it — in both React state and the live
+      // mirror, so the rest of this move stays consistent.
       setInv((prev) => ({ ...prev, masterKey: true, picklocks: 0 }));
+      liveInv.masterKey = true;
+      liveInv.picklocks = 0;
     }
     return result.outcome;
   }
@@ -5331,13 +5343,14 @@ export default function ShaolinGame() {
       });
       return given;
     }
-    // Phase B — a qualifying event may grant one picklock. No-op once the player
-    // holds the key or already has three (state-based, so a picklock lost to
-    // Rival's Tribute can be earned again later).
-    async function maybeGrantPicklock(char, chance) {
+    // Opportunistic picklock find — rolled once per turn (see the end of the
+    // move). Sudden and random, not tied to any tile or event. No-op once the
+    // player holds the key or already has three (state-based, so a picklock lost
+    // to Rival's Tribute can be earned again later).
+    async function maybeFindPicklock(char) {
       const m = invMirror[char];
       if (m.masterKey || m.picklocks >= 3) return;
-      if (Math.random() >= chance) return;
+      if (Math.random() >= PICKLOCK_FIND_CHANCE) return;
       m.picklocks = Math.min(3, m.picklocks + 1);
       const setInv = char === "shaolin" ? setShaolinInventory : setNinjaInventory;
       setInv((prev) => ({ ...prev, picklocks: Math.min(3, prev.picklocks + 1) }));
@@ -5357,7 +5370,7 @@ export default function ShaolinGame() {
       // tile. Admitted → stay; failed → swept back to tile 40 at 3x, whose event
       // resolves.
       if (tile >= PAGODA_START && tile < 64) {
-        const outcome = await runPagodaGate(character);
+        const outcome = await runPagodaGate(character, invMirror[character]);
         if (outcome === "failed") {
           let pos = tile;
           while (pos > 40) { pos--; await sleep(Math.round(500 / 3)); setTile(pos); }
@@ -5398,15 +5411,6 @@ export default function ShaolinGame() {
         }
         setTile(t.dest);
         await sleep(200);
-        // A fall is one of the ways a picklock turns up (Phase B), but each
-        // hole offers it only on the player's FIRST fall through it — marked
-        // whether or not it grants — so re-entering the same hole (e.g. via an
-        // upward ladder loop) can never farm more picklocks.
-        const pickedHoles = pickHoleRef.current[character];
-        if (!pickedHoles.has(tile)) {
-          pickedHoles.add(tile);
-          await maybeGrantPicklock(character, PICKLOCK_CHANCE.hole);
-        }
         // Trigger the destination tile's normal landing event (item, fight,
         // trap, etc.). Hole landings can never themselves be holes by board
         // rules, so this won't recurse into another fall.
@@ -5465,7 +5469,13 @@ export default function ShaolinGame() {
         if (TRAPS_ROAM) {
           const cand = eligibleTrapTiles(tiles, liveTraps, new Set([tile]));
           liveTraps.delete(tile);
-          if (cand.length) liveTraps.add(cand[Math.floor(Math.random() * cand.length)]);
+          if (cand.length) {
+            // Prefer sliding to a tile ahead of the player (toward the goal) so
+            // the trap stays reachable rather than stranding on a passed tile.
+            const ahead = cand.filter((n) => n > tile);
+            const pool = ahead.length && Math.random() < TRAP_FORWARD_BIAS ? ahead : cand;
+            liveTraps.add(pool[Math.floor(Math.random() * pool.length)]);
+          }
           setTrapTiles(new Set(liveTraps));
         }
 
@@ -5550,8 +5560,6 @@ export default function ShaolinGame() {
             await sleep(500);
             setTile(pos);
           }
-          // Small consolation for being driven backward: a chance at a picklock.
-          await maybeGrantPicklock(character, PICKLOCK_CHANCE.setback);
           // Apply normal landing logic on the final tile (could trigger another event).
           return await resolveLanding(pos);
         }
@@ -5735,8 +5743,6 @@ export default function ShaolinGame() {
         // the first demon victory (a win, so no setback follows).
         if (outcome === "won" && ninjaType === "demon") {
           await showBeat("demon");
-          // Slaying the Demon can yield a picklock (Phase B) — a rare reward.
-          await maybeGrantPicklock(character, PICKLOCK_CHANCE.demon);
         }
         if (outcome === "lost") {
           const setback = NINJA_SETBACK[ninjaType];
@@ -5762,7 +5768,7 @@ export default function ShaolinGame() {
       // tile (≥ 64), which bypasses resolveLanding. Direct landings that stop
       // inside the pagoda (61–63) are gated by resolveLanding instead.
       if ((current || 0) < PAGODA_START && directTarget >= 64) {
-        const outcome = await runPagodaGate(character);
+        const outcome = await runPagodaGate(character, invMirror[character]);
         if (outcome === "failed") {
           let pos = current || 0;
           while (pos > 40) { pos--; await sleep(Math.round(500 / 3)); setTile(pos); }
@@ -5923,7 +5929,7 @@ export default function ShaolinGame() {
       // (tile 61). Admitted → movement continues to the duel tile; failed →
       // swept back to tile 40 at 3x speed, whose event then resolves.
       if (next === PAGODA_START) {
-        const outcome = await runPagodaGate(character);
+        const outcome = await runPagodaGate(character, invMirror[character]);
         if (outcome === "failed") {
           let pos = next;
           while (pos > 40) { pos--; await sleep(Math.round(500 / 3)); setTile(pos); }
@@ -6031,6 +6037,10 @@ export default function ShaolinGame() {
     }
 
     if ((current || 0) >= EQUATOR_TILE) await showBeat("equator"); // jump/ladder caught the crossing
+    // Opportunistic picklock find: one roll at the end of the turn, whatever the
+    // turn contained. Self-guards on key/cap; skipped only at the duel tile,
+    // where a picklock would be pointless.
+    if ((current || 0) < 64) await maybeFindPicklock(character);
     setIsRolling(false);
     setCurrentTurn(character === "shaolin" ? "ninja" : "shaolin");
   }

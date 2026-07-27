@@ -182,7 +182,7 @@ Because the trial is always available, admission can always be earned; the pagod
 
 **The Sacred Master Key** is obtained three ways: found as an uncommon item during the board phase, forged from **three picklocks** when the holder reaches the pagoda, or earned by passing the pagoda's trial. It is kept for the session and **cannot be lost** to any trap.
 
-**Picklocks** turn up by luck at dramatic moments — falling into a hole, being driven back by the Setback trap, or defeating the Demon Ninja — never on ordinary item tiles. Each of these is a once-only chance: a given hole offers a picklock only on a player's first fall through it, so the same hole can't be milked for more by looping back to it. A player may hold up to three. They are **not** combined on the board; the third is forged into the Master Key only when the player reaches the pagoda. A picklock cannot be taken by Sorcery Theft (it never simply vanishes), but one can be handed to the opponent by Rival's Tribute — and only if that opponent can still use it (they hold fewer than three and no key). A picklock lost this way can be earned again later.
+**Picklocks** are found opportunistically — a sudden, random stroke of luck that can happen on any turn, whatever that turn held (an ordinary move, a fight, a trap, a fall, an item find, or nothing at all). They are not tied to any particular tile or event, and never appear on ordinary item tiles. Each turn a player has a small chance to stumble on one. A player may hold up to three. They are **not** combined on the board; the third is forged into the Master Key only when the player reaches the pagoda. A picklock cannot be taken by Sorcery Theft (it never simply vanishes), but one can be handed to the opponent by Rival's Tribute — and only if that opponent can still use it (they hold fewer than three and no key). A picklock lost this way can be earned again later.
 
 ---
 
@@ -210,7 +210,7 @@ Because the trial is always available, admission can always be earned; the pagod
 
 - Trap tiles look identical to normal tiles before landing. The player has no advance warning.
 - When the chip lands on a trap tile, the modal announces the trap type and resolves the effect immediately.
-- After a trap springs it relocates: that tile becomes safe and a new trap tile appears elsewhere (never on a fight, hole, item, ladder, or pagoda tile, and never right beside another trap). The board therefore always holds six live traps, but which tiles they are drifts throughout the game. Re-landing on a tile you already sprung does nothing — the danger has moved on.
+- After a trap springs it relocates: that tile becomes safe and a new trap tile appears elsewhere (never on a fight, hole, item, ladder, or pagoda tile, and never right beside another trap). It usually slides to a tile **ahead** of the player who triggered it — a trap that skitters forward keeps threatening, rather than being left behind on tiles already passed — though a minority resettle anywhere. The board therefore always holds six live traps, but which tiles they are drifts throughout the game. Re-landing on a tile you already sprung does nothing — the danger has moved on.
 
 ---
 
