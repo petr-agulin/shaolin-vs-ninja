@@ -171,7 +171,7 @@ The first player to land on tile 64 triggers the Ultimate Duel immediately — t
 
 Tiles 61–63 are the **Sacred Pagoda** — the gated approach to the duel. The first time a player's move carries them into the pagoda (crossing to tile ≥ 61), a gate appears before they may go on to tile 64:
 
-- **Holding the Sacred Master Key** — the gate opens and the player continues toward the duel tile.
+- **Holding the Sacred Master Key** — the gate opens at the player's touch. They may **enter at once**, or, if curious, take the 3-question trial first **for honor** — either way the gate opens, even if all three are answered wrong. (A player who has collected **three picklocks** first watches them fuse into the Master Key, then is offered the same choice.)
 - **Without the key** — the pagoda poses a **trial of 3 multiple-choice questions**. The player answers all three, then sees which were right, the correct answers, and short explanations. A **Kids / Adults toggle** on the modal chooses the difficulty band (kids ≈ ages 10–12; adults = harder general knowledge). The band may be switched while still on the first question — both bands' questions are held, so toggling shows the same set each way — and **locks once the player advances past question one**; the choice is remembered for the game.
   - The number that must be correct is **3 minus the picklocks held** (so 3 with none, 2 with one, 1 with two).
   - **Pass** → the player earns the Master Key (any picklocks complete into it) and is admitted.

@@ -31,7 +31,7 @@ const MODAL_IMAGES = {
   finalDuel: null,
   finalDuelWin: { shaolin: null, ninja: null },
   gameStart: null,
-  pagoda: { arrival: null, transform: null, admission: { shaolin: null, ninja: null } },
+  pagoda: { arrival: null, transform: null, masterkey: null, admission: { shaolin: null, ninja: null } },
 };
 for (const path in ALL_POSE_IMAGE_MODULES) {
   const mod = ALL_POSE_IMAGE_MODULES[path];
@@ -49,6 +49,10 @@ for (const path in ALL_POSE_IMAGE_MODULES) {
     else if (path.includes("/Modals/Pagoda/")) {
       if (id === "arrival_to_pagoda") MODAL_IMAGES.pagoda.arrival = mod;
       else if (id === "transform_picklocks_to_master_key") MODAL_IMAGES.pagoda.transform = mod;
+      // Dedicated "you hold the Master Key" art. Until such a file is provided,
+      // the modal falls back to the transform image. Drop a Have_master_key.png
+      // into IMAGES/Modals/Pagoda/ to light this up.
+      else if (id === "have_master_key") MODAL_IMAGES.pagoda.masterkey = mod;
       else if (id === "master_key_admission_shaolin") MODAL_IMAGES.pagoda.admission.shaolin = mod;
       else if (id === "master_key_admission_ninja") MODAL_IMAGES.pagoda.admission.ninja = mod;
     }
@@ -105,6 +109,7 @@ if (typeof window !== "undefined") {
     MODAL_IMAGES.gameStart,
     MODAL_IMAGES.pagoda.arrival,
     MODAL_IMAGES.pagoda.transform,
+    MODAL_IMAGES.pagoda.masterkey,
     MODAL_IMAGES.pagoda.admission.shaolin,
     MODAL_IMAGES.pagoda.admission.ninja,
   ].filter(Boolean));
@@ -4795,7 +4800,10 @@ function PagodaGateModal({ character, hasKey, picklocks = 0, quizMode = "kids", 
   const [locked, setLocked] = useState(false);
   const questions = questionsByMode[mode];
   const answers = answersByMode[mode];
-  // stages: "arrival" → "questions" → "results" → ("transform") → "admittance"
+  // stages: "arrival" → branch on state:
+  //   no key, <3 picklocks → "questions" → "results" → "admittance" (pass) | reject (fail)
+  //   holds the key        → "masterkey" → "admittance" | ("questions" → "results" → "admittance")
+  //   three picklocks      → "transform" → "masterkey" → (as above)
   const [stage, setStage] = useState("arrival");
   const [qIndex, setQIndex] = useState(0);
 
@@ -4871,14 +4879,14 @@ function PagodaGateModal({ character, hasKey, picklocks = 0, quizMode = "kids", 
         its gates unproven — show your worth, and the way beyond shall open.
       </div>
       <button style={{ ...BTN_PRIMARY, background: "#d4af37", color: "#1a1008", fontSize: 15, padding: "12px 28px" }} onClick={() => {
-        if (need === 0 && !hasKey) setStage("transform");       // three picklocks
-        else if (need === 0) setStage("admittance");            // holds the key
-        else setStage("questions");
+        if (need === 0 && !hasKey) setStage("transform");       // forge from three picklocks
+        else if (need === 0) setStage("masterkey");             // already holds the key
+        else setStage("questions");                             // must earn it at the trial
       }}>Enter</button>
     </>);
   }
 
-  // --- Transform (three picklocks → key) ---
+  // --- Transform (three picklocks → key) --- leads into the master-key modal.
   if (stage === "transform") {
     return wrap(<>
       <div style={{ fontSize: 15, color: "#d4af37", fontWeight: 700, letterSpacing: 0.8, marginBottom: 14 }}>THE KEY IS FORGED</div>
@@ -4886,7 +4894,29 @@ function PagodaGateModal({ character, hasKey, picklocks = 0, quizMode = "kids", 
       <p style={{ fontSize: 15, lineHeight: 1.6, color: "#e8dcb0", fontStyle: "italic", marginBottom: 22 }}>
         Your three picklocks fuse in the pagoda's light and become the Sacred Master Key.
       </p>
-      <button style={{ ...BTN_PRIMARY, background: "#d4af37", color: "#1a1008", fontSize: 15, padding: "12px 28px" }} onClick={() => setStage("admittance")}>Continue</button>
+      <button style={{ ...BTN_PRIMARY, background: "#d4af37", color: "#1a1008", fontSize: 15, padding: "12px 28px" }} onClick={() => setStage("masterkey")}>Continue</button>
+    </>);
+  }
+
+  // --- Master Key held --- offer to enter now, or answer the trial for honor
+  // (the gate opens either way). Reached with a real key or a freshly forged one.
+  if (stage === "masterkey") {
+    return wrap(<>
+      <div style={{ fontSize: 15, color: "#d4af37", fontWeight: 700, letterSpacing: 0.8, marginBottom: 14 }}>YOU HOLD THE MASTER KEY</div>
+      <PagodaGateImage src={MODAL_IMAGES.pagoda.masterkey || MODAL_IMAGES.pagoda.transform} glyph="🗝️" />
+      <p style={{ fontSize: 15, lineHeight: 1.6, color: "#e8dcb0", fontStyle: "italic", marginBottom: 22 }}>
+        The Sacred Master Key rests in your hand — the pagoda's gate will open at your
+        touch. Enter now, or, if you are curious, test yourself against the trial first.
+        The way opens either way.
+      </p>
+      <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
+        <button style={{ ...BTN_PRIMARY, background: "#d4af37", color: "#1a1008", fontSize: 15, padding: "12px 28px" }} onClick={() => setStage("admittance")}>
+          Enter now
+        </button>
+        <button style={{ ...BTN_PRIMARY, background: "transparent", color: "#d4af37", border: "1px solid #d4af37", fontSize: 15, padding: "12px 28px" }} onClick={() => setStage("questions")}>
+          Answer the trial
+        </button>
+      </div>
     </>);
   }
 
@@ -4912,8 +4942,13 @@ function PagodaGateModal({ character, hasKey, picklocks = 0, quizMode = "kids", 
     return wrap(<>
       {modeToggle}
       <div style={{ display: "flex", flexDirection: "column", justifyContent: "center", minHeight: 480 }}>
-        <div style={{ fontSize: 14, color: "#d4af37", fontWeight: 700, letterSpacing: 0.6, marginBottom: 14 }}>
+        <div style={{ fontSize: 14, color: "#d4af37", fontWeight: 700, letterSpacing: 0.6, marginBottom: 6 }}>
           THE PAGODA'S TRIAL — Question {qIndex + 1} of 3
+        </div>
+        <div style={{ fontSize: 12.5, color: "#c4ad7b", fontStyle: "italic", marginBottom: 16 }}>
+          {need === 0
+            ? "You hold the Master Key — the gate opens even if you answer none correctly."
+            : `Answer at least ${need} of 3 correctly to pass.`}
         </div>
         <p style={{ fontSize: 19, lineHeight: 1.5, color: "#f5e8c4", marginBottom: 22 }}>{q.q}</p>
         <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 26, textAlign: "left" }}>
@@ -4946,13 +4981,16 @@ function PagodaGateModal({ character, hasKey, picklocks = 0, quizMode = "kids", 
   // --- Results ---
   const correctCount = questions.reduce((n, q, i) => n + (answers[i] === q.answer ? 1 : 0), 0);
   const passed = correctCount >= need;
+  // keyPath = the player already holds the key (real or just forged), so the
+  // trial was optional "for honor": no pass/fail drama, the gate opens regardless.
+  const keyPath = need === 0;
   return wrap(
     <div style={{ display: "flex", flexDirection: "column", justifyContent: "center", minHeight: 480 }}>
-      <div style={{ fontSize: 15, color: passed ? "#8ee6a8" : "#e8a0a0", fontWeight: 700, letterSpacing: 0.6, marginBottom: 10 }}>
-        {passed ? "THE TRIAL IS PASSED" : "THE TRIAL IS FAILED"}
+      <div style={{ fontSize: 15, color: keyPath ? "#d4af37" : (passed ? "#8ee6a8" : "#e8a0a0"), fontWeight: 700, letterSpacing: 0.6, marginBottom: 10 }}>
+        {keyPath ? "YOUR TRIAL — FOR HONOR" : (passed ? "THE TRIAL IS PASSED" : "THE TRIAL IS FAILED")}
       </div>
       <div style={{ fontSize: 15, color: "#f5e8c4", marginBottom: 14 }}>
-        You answered <strong>{correctCount}</strong> of 3 correctly{need < 3 ? ` (you needed ${need})` : ""}.
+        You answered <strong>{correctCount}</strong> of 3 correctly{!keyPath && need < 3 ? ` (you needed ${need})` : ""}.
       </div>
       <div style={{ textAlign: "left", marginBottom: 20 }}>
         {questions.map((q, i) => {
@@ -4970,12 +5008,14 @@ function PagodaGateModal({ character, hasKey, picklocks = 0, quizMode = "kids", 
         })}
       </div>
       <p style={{ fontSize: 14, fontStyle: "italic", color: "#e8dcb0", marginBottom: 22 }}>
-        {passed
-          ? "The pagoda judges you worthy. The Master Key is yours, and the gate opens."
-          : "The pagoda turns you away. Gather your strength and return to try again."}
+        {keyPath
+          ? "You hold the Master Key — the gate opens regardless of the trial."
+          : passed
+            ? "The pagoda judges you worthy. The Master Key is yours, and the gate opens."
+            : "The pagoda turns you away. Gather your strength and return to try again."}
       </p>
       <button style={{ ...BTN_PRIMARY, background: "#d4af37", color: "#1a1008", fontSize: 15, padding: "12px 28px", alignSelf: "center" }} onClick={() => (passed ? setStage("admittance") : onResolve({ outcome: "failed" }))}>
-        {passed ? "Receive the Key" : "Back to the Path"}
+        {keyPath ? "To the Gate" : passed ? "Receive the Key" : "Back to the Path"}
       </button>
     </div>
   );
