@@ -2,3 +2,6 @@ node_modules
 dist
 .vite
 *.log
+
+# Local-only planning doc — intentionally kept out of the GitHub repo
+Plan.md
